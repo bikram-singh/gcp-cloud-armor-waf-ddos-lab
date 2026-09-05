@@ -1,10 +1,4 @@
-# Each rules-*.tf file in this directory defines one `locals` block. This
-# file exposes them as outputs so environments/lab (or any other
-# environment later) can call this directory as a module and merge the
-# rule lists together — Terraform does NOT auto-load sibling directories,
-# so without this file these rules would silently never apply anywhere.
-
-output "baseline_rules" {
+﻿output "baseline_rules" {
   value = local.baseline_rules
 }
 
@@ -52,9 +46,6 @@ output "threat_intelligence_rules" {
   value = local.threat_intelligence_rules
 }
 
-# NOT included in environments/lab's default concat() — see the file's own
-# comment for why (shares a priority with the SQLi rule, is a swap-in fix,
-# not an additive rule).
 output "waf_tuning_rules" {
   value = local.waf_tuning_rules
 }
@@ -67,10 +58,10 @@ output "demo_user_ip_headers" {
   value = local.demo_user_ip_headers
 }
 
-# NOT consumed by environments/lab/main.tf's default concat() or module
-# instantiation — see terraform/policies/hierarchical-org-policy.tf and
-# modules/cloud-armor/hierarchical-policies/README.md for why this stays
-# a manual, deliberate apply rather than part of the routine lab workflow.
 output "hierarchical_example_rules" {
   value = local.hierarchical_example_rules
+}
+
+output "xff_ip_test_rules" {
+  value = local.xff_ip_test_rules
 }
