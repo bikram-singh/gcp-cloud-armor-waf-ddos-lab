@@ -109,33 +109,25 @@ module "instance_groups" {
 }
 
 # ---------------------------------------------------------------------------
-# Cloud Armor — baseline policy
-#
-# TODO: once terraform/policies/rules-*.tf files exist, move the `rules`
-# list below out to a local composed from those files rather than defining
-# rules inline here. Kept inline for now so this environment plans/applies
-# standalone.
+# Cloud Armor rules — sourced from terraform/policies (a shared module so
+# future environments can reuse the same rule definitions). Add more
+# outputs there (rate-limit, redirect, geo/ASN, etc.) as those rules-*.tf
+# files get built, and extend the concat() below to include them.
 # ---------------------------------------------------------------------------
+module "policies" {
+  source = "../../policies"
+}
+
 module "baseline_policy" {
   source      = "../../modules/cloud-armor/backend-policies"
   project_id  = var.project_id
   policy_name = "lab-baseline-policy"
-  description = "Baseline deny-all / allow-all priority demo"
+  description = "Baseline + preconfigured WAF rules for gcp-cloud-armor-waf-ddos-lab"
 
-  rules = [
-    {
-      priority      = 2147483647
-      action        = "deny(403)"
-      description   = "Default deny-all"
-      src_ip_ranges = ["*"]
-    },
-    {
-      priority      = 10
-      action        = "allow"
-      description   = "Allow all — demonstrates priority ordering over default deny"
-      src_ip_ranges = ["*"]
-    },
-  ]
+  rules = concat(
+    module.policies.baseline_rules,
+    module.policies.preconfigured_waf_rules,
+  )
 }
 
 # ---------------------------------------------------------------------------
