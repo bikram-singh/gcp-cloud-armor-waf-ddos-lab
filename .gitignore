@@ -21,3 +21,6 @@ terraform.rc
 Thumbs.db
 .vscode/
 *.swp
+
+# Demo script local config (real LB IPs — not sensitive, but personal/local)
+scripts/demos/_env.sh
