@@ -1,21 +1,24 @@
-# Logging verbosity (NORMAL vs VERBOSE) — a correction to the original
-# project plan worth calling out explicitly: this is a POLICY-WIDE setting
-# (advanced_options_config.log_level on the security policy resource
-# itself), not something configured per individual rule. The original
-# scoping table described this as "on one existing rule," which doesn't
-# match the actual GCP resource schema — flagging that here rather than
-# quietly building something that doesn't match how the API actually
-# works.
+# Logging verbosity (NORMAL vs VERBOSE) -- a POLICY-WIDE setting
+# (advanced_options_config.log_level), not per-rule.
 #
-# VERBOSE adds full request/match detail to Cloud Logging for every rule in
-# the policy — this is genuinely how you'd find the real field name needed
-# in rules-waf-tuning.tf's exclusion (e.g. inspecting logged request
-# details during the false-positive incident to identify which query
-# param/header actually carried the offending value).
+# CORRECTED after real testing during this project's negative-testing
+# phase: the original assumption ("VERBOSE adds full match detail, NORMAL
+# strips it") was NOT confirmed. Three separate log entries were compared
+# across the switch (a DENY under VERBOSE, an equivalent DENY under
+# NORMAL, and a fresh ALLOW entry under NORMAL) -- all three showed
+# identical field structure: matchedFieldName, matchedFieldType,
+# matchedFieldValue, matchedLength, preconfiguredExprIds, remoteIpInfo,
+# tlsJa3Fingerprint, tlsJa4Fingerprint were present in every entry
+# regardless of log_level.
 #
-# Wired into environments/lab/main.tf's `baseline_policy` module call as
-# `log_level = module.policies.demo_log_level` — flip the value below and
-# re-apply to switch modes.
+# No field-level difference was observed in this policy's logged output
+# between the two settings. The actual difference (if any) may be in log
+# VOLUME/sampling rather than per-entry richness, which this test did not
+# isolate -- that would need a much higher-traffic comparison to observe,
+# not something a handful of manual curl requests can distinguish. Filing
+# this as a confirmed correction rather than continuing to assert an
+# unverified claim.
 locals {
-  demo_log_level = "VERBOSE" # set to "NORMAL" to switch back
+  demo_log_level = "NORMAL" # kept at NORMAL going forward -- VERBOSE
+                             # showed no additional benefit in real testing
 }
