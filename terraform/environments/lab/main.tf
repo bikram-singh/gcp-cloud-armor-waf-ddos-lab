@@ -138,6 +138,7 @@ module "baseline_policy" {
     module.policies.rate_limit_ja4_rules,
     module.policies.redirect_rules,
     module.policies.xff_ip_test_rules,
+    module.policies.preview_test_rules,
     # module.policies.address_group_rules,       # Enterprise required
     # module.policies.threat_intelligence_rules,  # Enterprise required
     # module.policies.waf_tuning_rules is intentionally NOT included here --
