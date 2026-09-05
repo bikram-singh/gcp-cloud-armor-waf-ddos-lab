@@ -37,3 +37,9 @@ variable "edge_security_policy_self_link" {
   type        = string
   default     = null
 }
+
+variable "enable_ipv6" {
+  description = "If true, also provisions a second global IPv6 address + forwarding rule pointing at the same backend/URL map — needed to actually test rules-ip-based-ipv6.tf's IPv6 CEL rule end-to-end. Off by default to avoid provisioning resources most instances of this module won't need."
+  type        = bool
+  default     = false
+}

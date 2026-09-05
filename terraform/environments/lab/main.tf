@@ -172,6 +172,7 @@ module "lb_vulnbank" {
   port_name                 = "http-vulnbank"
   port                      = 5000
   security_policy_self_link = module.baseline_policy.self_link
+  enable_ipv6                = true # needed for rules-ip-based-ipv6.tf's demo — see 02b-ipv6-allow-deny.sh
 }
 
 # ---------------------------------------------------------------------------

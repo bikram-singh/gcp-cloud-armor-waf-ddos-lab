@@ -95,3 +95,25 @@ resource "google_compute_global_forwarding_rule" "this" {
   ip_address            = google_compute_global_address.this.id
   load_balancing_scheme = "EXTERNAL_MANAGED"
 }
+
+# ---------------------------------------------------------------------------
+# Optional second IPv6 frontend — same backend/URL map/proxy, just a
+# second address + forwarding rule so IPv4 and IPv6 clients both reach the
+# same backend service (and therefore the same Cloud Armor policy).
+# ---------------------------------------------------------------------------
+resource "google_compute_global_address" "ipv6" {
+  count      = var.enable_ipv6 ? 1 : 0
+  project    = var.project_id
+  name       = "${var.name_prefix}-lb-ipv6"
+  ip_version = "IPV6"
+}
+
+resource "google_compute_global_forwarding_rule" "ipv6" {
+  count                 = var.enable_ipv6 ? 1 : 0
+  project               = var.project_id
+  name                  = "${var.name_prefix}-fwd-rule-ipv6"
+  target                = google_compute_target_https_proxy.this.id
+  port_range            = "443"
+  ip_address            = google_compute_global_address.ipv6[0].id
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}

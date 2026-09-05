@@ -1,0 +1,7 @@
+#!/bin/bash
+# Copy this file to _env.sh (gitignored) and fill in your real values.
+# Every demo script sources _env.sh automatically.
+
+export NGINX_LB_IP="REPLACE_ME"       # terraform output -raw nginx_lb_ip
+export VULNBANK_LB_IP="REPLACE_ME"    # terraform output -raw vulnbank_lb_ip
+export VULNBANK_LB_IPV6="REPLACE_ME"  # terraform output -raw vulnbank_lb_ipv6
