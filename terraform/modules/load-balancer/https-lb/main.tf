@@ -1,4 +1,4 @@
-# ---------------------------------------------------------------------------
+﻿# ---------------------------------------------------------------------------
 # TLS certificate -- two mutually exclusive paths:
 #   1. domain_name set: Google-managed cert, auto-renews, browsers trust it,
 #      but takes 15-60+ min to provision AFTER DNS actually resolves to this
@@ -62,7 +62,13 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# Backend service -- Cloud Armor attaches here
+# Backend service -- Cloud Armor attaches here. log_config is REQUIRED for
+# any HTTP(S) LB logs to be generated at all -- Cloud Armor's own log_level
+# (set on the security policy itself, see backend-policies module) only
+# controls VERBOSITY of those logs, it does not turn logging on by itself.
+# Missing this meant Cloud Armor was enforcing correctly the whole time,
+# but nothing was ever actually logged -- confirmed via a real empty
+# gcloud logging read during this project's negative-testing phase.
 # ---------------------------------------------------------------------------
 resource "google_compute_health_check" "this" {
   project = var.project_id
@@ -84,6 +90,11 @@ resource "google_compute_backend_service" "this" {
 
   backend {
     group = var.instance_group_self_link
+  }
+
+  log_config {
+    enable      = true
+    sample_rate = 1.0
   }
 }
 
