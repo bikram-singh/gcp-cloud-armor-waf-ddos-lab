@@ -1,24 +1,39 @@
 # ---------------------------------------------------------------------------
-# Self-signed TLS cert, generated automatically — this is a lab with no real
-# domain, so there's no DNS to hang a Google-managed cert off. Demo scripts
-# hitting this LB need `curl -k` (or your browser will show a cert warning,
-# click through it). If you later attach a real domain, swap this block for
-# a `google_compute_managed_ssl_certificate` referencing that domain instead.
+# TLS certificate -- two mutually exclusive paths:
+#   1. domain_name set: Google-managed cert, auto-renews, browsers trust it,
+#      but takes 15-60+ min to provision AFTER DNS actually resolves to this
+#      LB's IP (provisioning starts as soon as the resource applies, but
+#      Google can't validate/issue until DNS is live and correct).
+#   2. domain_name null (default): self-signed cert generated at apply time,
+#      works immediately, browsers show a trust warning (expected for a lab
+#      with no domain).
 # ---------------------------------------------------------------------------
+resource "google_compute_managed_ssl_certificate" "this" {
+  count   = var.domain_name != null ? 1 : 0
+  project = var.project_id
+  name    = "${var.name_prefix}-managed-cert"
+
+  managed {
+    domains = [var.domain_name]
+  }
+}
+
 resource "tls_private_key" "this" {
+  count     = var.domain_name == null ? 1 : 0
   algorithm = "RSA"
   rsa_bits  = 2048
 }
 
 resource "tls_self_signed_cert" "this" {
-  private_key_pem = tls_private_key.this.private_key_pem
+  count           = var.domain_name == null ? 1 : 0
+  private_key_pem = tls_private_key.this[0].private_key_pem
 
   subject {
     common_name  = "${var.name_prefix}.cloud-armor-lab.internal"
     organization = "gcp-cloud-armor-waf-ddos-lab"
   }
 
-  validity_period_hours = 24 * 90 # 90 days — re-apply if the lab outlives this
+  validity_period_hours = 24 * 90
   allowed_uses = [
     "key_encipherment",
     "digital_signature",
@@ -27,18 +42,27 @@ resource "tls_self_signed_cert" "this" {
 }
 
 resource "google_compute_ssl_certificate" "this" {
+  count       = var.domain_name == null ? 1 : 0
   project     = var.project_id
   name_prefix = "${var.name_prefix}-selfsigned-"
-  private_key = tls_private_key.this.private_key_pem
-  certificate = tls_self_signed_cert.this.cert_pem
+  private_key = tls_private_key.this[0].private_key_pem
+  certificate = tls_self_signed_cert.this[0].cert_pem
 
   lifecycle {
     create_before_destroy = true
   }
 }
 
+locals {
+  ssl_certificate_ids = var.domain_name != null ? [
+    google_compute_managed_ssl_certificate.this[0].id
+    ] : [
+    google_compute_ssl_certificate.this[0].id
+  ]
+}
+
 # ---------------------------------------------------------------------------
-# Backend service — Cloud Armor attaches here
+# Backend service -- Cloud Armor attaches here
 # ---------------------------------------------------------------------------
 resource "google_compute_health_check" "this" {
   project = var.project_id
@@ -64,10 +88,9 @@ resource "google_compute_backend_service" "this" {
 }
 
 # ---------------------------------------------------------------------------
-# URL map — single default service. No path matchers needed: the path-based
-# demo (/goodpath, /badpath) is a Cloud Armor CEL rule matching
-# request.path, evaluated BEFORE traffic ever reaches this LB routing layer
-# — not a GCP URL-map routing decision. Keep this simple on purpose.
+# URL map -- single default service. No path matchers needed: the path-based
+# demo (/goodpath, /badpath) is a Cloud Armor CEL rule matching request.path,
+# evaluated BEFORE traffic ever reaches this LB routing layer.
 # ---------------------------------------------------------------------------
 resource "google_compute_url_map" "this" {
   project         = var.project_id
@@ -79,7 +102,7 @@ resource "google_compute_target_https_proxy" "this" {
   project          = var.project_id
   name             = "${var.name_prefix}-https-proxy"
   url_map          = google_compute_url_map.this.id
-  ssl_certificates = [google_compute_ssl_certificate.this.id]
+  ssl_certificates = local.ssl_certificate_ids
 }
 
 resource "google_compute_global_address" "this" {
@@ -97,9 +120,9 @@ resource "google_compute_global_forwarding_rule" "this" {
 }
 
 # ---------------------------------------------------------------------------
-# Optional second IPv6 frontend — same backend/URL map/proxy, just a
-# second address + forwarding rule so IPv4 and IPv6 clients both reach the
-# same backend service (and therefore the same Cloud Armor policy).
+# Optional second IPv6 frontend -- same backend/URL map/proxy, second
+# address + forwarding rule so IPv4 and IPv6 clients both reach the same
+# backend service (and therefore the same Cloud Armor policy).
 # ---------------------------------------------------------------------------
 resource "google_compute_global_address" "ipv6" {
   count      = var.enable_ipv6 ? 1 : 0

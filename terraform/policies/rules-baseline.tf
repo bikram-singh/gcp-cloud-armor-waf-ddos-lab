@@ -7,9 +7,9 @@
       src_ip_ranges = ["*"]
     },
     {
-      priority      = 10
+      priority      = 9000
       action        = "allow"
-      description   = "Allow all - demonstrates priority ordering over default deny"
+      description   = "Baseline allow -- explicit default-allow posture for normal traffic; specific denies (path/IP/geo/WAF/etc.) all sit at higher-priority (lower-number) rules and take precedence over this one"
       src_ip_ranges = ["*"]
     },
   ]

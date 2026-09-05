@@ -1,4 +1,4 @@
-output "external_ip" {
+﻿output "external_ip" {
   value = google_compute_global_address.this.address
 }
 
