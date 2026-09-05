@@ -46,3 +46,21 @@ Note this is a separate product subscription, reCAPTCHA Enterprise, from
 Cloud Armor Enterprise itself, see standard-vs-enterprise.md for that
 distinction, both are referenced together here because they compose in
 the redirect action.
+
+## Confirmed finding: unconfigured GOOGLE_RECAPTCHA rules go inert, not just "unchallenged"
+
+Real testing during this project's negative-testing phase produced a
+more precise finding than initially assumed. A GOOGLE_RECAPTCHA redirect
+rule was moved to a higher-precedence priority (ahead of a competing
+rate-limit rule) specifically to isolate its behavior, using the exact
+same header-matching CEL pattern as a working EXTERNAL_302 rule (which
+fired correctly, confirmed via a clean 302 response). The
+GOOGLE_RECAPTCHA rule never fired under the same conditions -- traffic
+consistently fell through to the next rule that matched instead.
+
+This suggests an unconfigured GOOGLE_RECAPTCHA rule is effectively
+INERT (silently skipped by Cloud Armor's enforcement engine), not
+"fires but the visual challenge does not render," which was the
+original, weaker assumption. Not independently re-verifiable without an
+actual reCAPTCHA Enterprise key configured -- if you have one, testing
+whether this holds would be valuable follow-up confirmation.
