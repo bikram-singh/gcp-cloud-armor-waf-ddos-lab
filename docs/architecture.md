@@ -98,3 +98,37 @@ environments/lab
   - module.baseline_policy (depends on policies)
   - module.trusted_ips (address-groups, independent)
   - module.lb_nginx / module.lb_vulnbank (depends on instance_groups and baseline_policy)
+
+## Known gotcha: unmanaged instance groups after VM replacement
+
+If a VM in this lab is ever destroyed and recreated (Terraform replace,
+manual `gcloud compute instances delete` + recreate, etc.), its
+unmanaged instance group can end up with ZERO members afterward, even
+though Terraform's `google_compute_instance_group.instances` argument
+shows no diff (same VM name/self_link string, so Terraform sees nothing
+to change). The backend service then reports no healthy backends, and
+the LB returns a generic "unconditional drop overload" response --
+this is a Google Front End / Envoy-level message meaning zero available
+backends, not a Cloud Armor block.
+
+Confirmed hit during this project's real first deploy: the nginx VM was
+replaced (via `terraform apply` after a startup-script fix), and its
+instance group silently emptied out.
+
+**Fix:**
+```powershell
+gcloud compute instance-groups unmanaged add-instances <group-name> \
+  --zone=<zone> --project=<project> --instances=<vm-name>
+```
+Then confirm with:
+```powershell
+gcloud compute backend-services get-health <backend-name> --global --project=<project>
+```
+Wait ~1-2 minutes for the health check to flip to `HEALTHY` after
+re-adding.
+
+**Why this doesn't get caught by `terraform plan`:** Terraform's diff
+is based on the *configured* value of the `instances` list, not the
+group's actual current membership as GCP sees it. Since the VM's
+self_link is identical after replacement, Terraform believes nothing
+changed and won't re-apply the membership.

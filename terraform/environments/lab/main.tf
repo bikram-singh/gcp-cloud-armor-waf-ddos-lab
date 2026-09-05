@@ -185,9 +185,10 @@ module "baseline_policy" {
 
 # ---------------------------------------------------------------------------
 # HTTPS Load Balancers -- one per backend app, both sharing the same Cloud
-# Armor policy above (swap/extend policies per rules-*.tf file as those get
-# built; both LBs stay wired to whichever policy module.baseline_policy
-# currently is).
+# Armor policy above. Each now has a domain_name pointing at a real DNS
+# record, so Terraform provisions a Google-managed SSL cert instead of the
+# self-signed one -- browsers will trust the connection once the cert
+# finishes provisioning (15-60+ min after DNS is live, which it already is).
 # ---------------------------------------------------------------------------
 module "lb_nginx" {
   source                    = "../../modules/load-balancer/https-lb"
@@ -197,6 +198,7 @@ module "lb_nginx" {
   port_name                 = "http"
   port                      = 80
   security_policy_self_link = module.baseline_policy.self_link
+  domain_name               = "nginx-lab.gcpcloudhub.in"
 }
 
 module "lb_vulnbank" {
@@ -208,6 +210,7 @@ module "lb_vulnbank" {
   port                      = 5000
   security_policy_self_link = module.baseline_policy.self_link
   enable_ipv6               = true # needed for rules-ip-based-ipv6.tf's demo -- see 02b-ipv6-allow-deny.sh
+  domain_name               = "vulnbank-lab.gcpcloudhub.in"
 }
 
 # ---------------------------------------------------------------------------
