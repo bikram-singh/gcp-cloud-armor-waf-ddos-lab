@@ -1,8 +1,17 @@
 locals {
   # Split rules into the two match styles the underlying resource accepts:
-  # a plain IP list (versioned_expr = SRC_IPS_V1) or a full CEL expression.
-  ip_rules  = { for r in var.rules : tostring(r.priority) => r if r.src_ip_ranges != null }
-  cel_rules = { for r in var.rules : tostring(r.priority) => r if r.src_ip_ranges == null }
+  # a plain IP/address-group list (versioned_expr = SRC_IPS_V1) or a full
+  # CEL expression. A rule qualifies for the IP bucket if it sets EITHER
+  # src_ip_ranges or src_address_groups (or both — GCP allows combining them,
+  # matched as OR).
+  ip_rules = {
+    for r in var.rules : tostring(r.priority) => r
+    if r.src_ip_ranges != null || r.src_address_groups != null
+  }
+  cel_rules = {
+    for r in var.rules : tostring(r.priority) => r
+    if r.src_ip_ranges == null && r.src_address_groups == null
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -16,8 +25,9 @@ resource "google_compute_security_policy" "global" {
   type        = "CLOUD_ARMOR"
 
   advanced_options_config {
-    json_parsing = var.json_parsing
-    log_level    = var.log_level
+    json_parsing             = var.json_parsing
+    log_level                = var.log_level
+    user_ip_request_headers  = var.user_ip_request_headers
   }
 
   dynamic "adaptive_protection_config" {
@@ -42,7 +52,8 @@ resource "google_compute_security_policy_rule" "global_ip" {
   match {
     versioned_expr = "SRC_IPS_V1"
     config {
-      src_ip_ranges = each.value.src_ip_ranges
+      src_ip_ranges      = each.value.src_ip_ranges
+      src_address_groups = each.value.src_address_groups
     }
   }
 
@@ -132,6 +143,45 @@ resource "google_compute_security_policy_rule" "global_cel" {
       target = each.value.redirect_target
     }
   }
+
+  # WAF field exclusions — fixes false positives by excluding a named
+  # header/cookie/query-param's VALUE from inspection (the name is still
+  # inspected). This is a long-established Cloud Armor feature, schema
+  # should be stable — unlike the JA3/JA4 enforce_on_key values elsewhere
+  # in this module, no verification caveat needed here.
+  dynamic "preconfigured_waf_config" {
+    for_each = (each.value.waf_exclusions != null && length(each.value.waf_exclusions) > 0) ? [1] : []
+    content {
+      dynamic "exclusion" {
+        for_each = each.value.waf_exclusions
+        content {
+          target_rule_set = exclusion.value.target_rule_set
+
+          dynamic "request_header" {
+            for_each = coalesce(exclusion.value.request_headers, [])
+            content {
+              operator = "EQUALS"
+              value    = request_header.value
+            }
+          }
+          dynamic "request_query_param" {
+            for_each = coalesce(exclusion.value.request_query_params, [])
+            content {
+              operator = "EQUALS"
+              value    = request_query_param.value
+            }
+          }
+          dynamic "request_cookie" {
+            for_each = coalesce(exclusion.value.request_cookies, [])
+            content {
+              operator = "EQUALS"
+              value    = request_cookie.value
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -158,10 +208,16 @@ resource "google_compute_region_security_policy_rule" "regional_ip" {
 
   match {
     config {
-      src_ip_ranges = each.value.src_ip_ranges
+      src_ip_ranges      = each.value.src_ip_ranges
+      src_address_groups = each.value.src_address_groups
     }
   }
 }
+
+# NOTE: waf_exclusions is not yet wired into the regional_cel resource below
+# (this lab only uses waf_exclusions on the global policy). Add a matching
+# `dynamic "preconfigured_waf_config"` block here, copied from global_cel
+# above, if you need field exclusions on a regional policy.
 
 resource "google_compute_region_security_policy_rule" "regional_cel" {
   for_each        = var.regional ? local.cel_rules : {}

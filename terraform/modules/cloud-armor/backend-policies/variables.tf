@@ -39,9 +39,15 @@ variable "json_parsing" {
 }
 
 variable "log_level" {
-  description = "Logging verbosity for this policy. One of NORMAL, VERBOSE."
+  description = "Logging verbosity for this policy. One of NORMAL, VERBOSE. Policy-wide, not per-rule — see rules-logging-modes.tf for the demo reasoning."
   type        = string
   default     = "NORMAL"
+}
+
+variable "user_ip_request_headers" {
+  description = "Policy-wide: header name(s) Cloud Armor trusts as the client's true origin IP when traffic arrives via another proxy/CDN in front of this LB (e.g. [\"X-Forwarded-For\"]). Affects IP-based match/rate-limit evaluation for every rule in this policy. Leave null/empty to use the immediate connecting IP (the default)."
+  type        = list(string)
+  default     = null
 }
 
 # ---------------------------------------------------------------------------
@@ -58,8 +64,11 @@ variable "rules" {
     preview     = optional(bool, false)
 
     # --- Match condition: exactly one of the following patterns ---
-    # 1. Simple IP allow/deny (versioned expr)
-    src_ip_ranges = optional(list(string))
+    # 1. Simple IP allow/deny (versioned expr) — src_ip_ranges and/or
+    #    src_address_groups (requires Cloud Armor Enterprise to enforce;
+    #    the rule creates fine on Standard tier, see modules/address-groups)
+    src_ip_ranges      = optional(list(string))
+    src_address_groups = optional(list(string))
 
     # 2. Custom CEL expression (path-based, geo, ASN, header, JA3/JA4, etc.)
     expression = optional(string)
@@ -69,6 +78,17 @@ variable "rules" {
     #    above; this block only carries the tuning metadata for documentation.
     waf_rule_set    = optional(string) # e.g. "sqli-v33-stable"
     waf_sensitivity = optional(number) # 0-4, OWASP paranoia level
+
+    # WAF field exclusions — value of the named header/cookie/query-param is
+    # skipped during inspection (the field NAME is still inspected). Fixes
+    # false positives without disabling the whole signature. Applied via
+    # operator EQUALS against the given field name(s).
+    waf_exclusions = optional(list(object({
+      target_rule_set       = string # must match the waf_rule_set this exclusion applies to
+      request_headers       = optional(list(string))
+      request_query_params  = optional(list(string))
+      request_cookies       = optional(list(string))
+    })))
 
     # --- Rate limiting (action = throttle | rate_based_ban) ---
     rate_limit_options = optional(object({

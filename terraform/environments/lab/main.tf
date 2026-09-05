@@ -124,9 +124,27 @@ module "baseline_policy" {
   policy_name = "lab-baseline-policy"
   description = "Baseline + preconfigured WAF rules for gcp-cloud-armor-waf-ddos-lab"
 
+  # Policy-wide settings (not per-rule — see rules-logging-modes.tf and
+  # rules-user-ip-header.tf for why these two aren't part of the rules list)
+  log_level                = module.policies.demo_log_level
+  user_ip_request_headers  = module.policies.demo_user_ip_headers
+
   rules = concat(
     module.policies.baseline_rules,
     module.policies.preconfigured_waf_rules,
+    module.policies.ip_based_rules,
+    module.policies.ipv6_rules,
+    module.policies.geo_based_rules,
+    module.policies.address_group_rules,
+    module.policies.path_based_rules,
+    module.policies.rate_limit_rules,
+    module.policies.rate_limit_ja3_rules,
+    module.policies.rate_limit_ja4_rules,
+    module.policies.redirect_rules,
+    module.policies.threat_intelligence_rules,
+    # module.policies.waf_tuning_rules is intentionally NOT included here —
+    # it's a swap-in replacement for preconfigured_waf_rules, not additive.
+    # See rules-waf-tuning.tf for the demo procedure.
   )
 }
 
@@ -157,15 +175,16 @@ module "lb_vulnbank" {
 }
 
 # ---------------------------------------------------------------------------
-# Address groups — example instantiation (commented; requires Cloud Armor
-# Enterprise to actually enforce, per the module's own README). Uncomment
-# once you have an Enterprise subscription active, or when demoing the
-# address-groups capability specifically.
+# Address groups — name here MUST match module.policies' address_group_name
+# variable (default "lab-trusted-ips") for rules-address-groups.tf's rule to
+# reference the right group. The group creates fine on Standard tier; the
+# RULE referencing it only enforces with an active Cloud Armor Enterprise
+# subscription (see modules/address-groups/main.tf).
 # ---------------------------------------------------------------------------
-# module "trusted_ips" {
-#   source     = "../../modules/address-groups"
-#   name       = "lab-trusted-ips"
-#   project_id = var.project_id
-#   items      = ["106.219.121.230/32"] # example: your local machine's IP
-# }
+module "trusted_ips" {
+  source     = "../../modules/address-groups"
+  name       = "lab-trusted-ips"
+  project_id = var.project_id
+  items      = ["106.219.121.230/32"] # replace with your actual trusted IP(s)
+}
 
