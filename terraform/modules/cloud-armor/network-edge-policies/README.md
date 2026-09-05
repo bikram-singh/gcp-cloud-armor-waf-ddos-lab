@@ -1,30 +1,29 @@
-# Network Edge Security Policies — STUB, verify before use
+# network-edge-policies module
 
-This protects **passthrough Network Load Balancers** (L3/L4) — distinct
-from the `edge-policies` module, which protects Cloud CDN / backend
-buckets. Same word ("edge"), two different features — this is exactly the
-disambiguation your article's Network Edge Security Policies section is
-meant to call out.
+No longer a stub. Confirmed: `google_compute_security_policy` /
+`google_compute_region_security_policy` directly support
+`type = "CLOUD_ARMOR_NETWORK"` — the module reuses the same dynamic
+IP/CEL rule pattern as `backend-policies`, simplified since this policy
+type filters packets (L3/L4), not HTTP requests.
 
-**Known pieces (verify exact syntax against the Terraform Registry before
-applying):**
-- A `google_compute_security_policy` with `type = "CLOUD_ARMOR_NETWORK"`
-  holds the rules (this part is stable/documented).
-- A `google_compute_network_edge_security_service` resource attaches that
-  policy to a region + network, which is what actually enforces it against
-  a passthrough Network LB's forwarding rules.
+## Why this module exists but isn't instantiated anywhere in this lab
 
-**Before writing main.tf here:**
-1. Confirm `google_compute_network_edge_security_service`'s exact required
-   arguments (region, network self_link, security_policy self_link) on the
-   Terraform Registry — this resource has had schema changes across
-   provider versions.
-2. Confirm which forwarding rule / backend service needs to reference this,
-   since Network LB wiring differs from the HTTPS LB module elsewhere in
-   this repo.
+There's genuinely nothing to attach it to — every LB this lab builds
+(`terraform/modules/load-balancer/https-lb`) is a Global external
+Application Load Balancer (L7/HTTPS). A `CLOUD_ARMOR_NETWORK` policy
+attaches to a backend service fronting a **passthrough Network Load
+Balancer**, which this lab doesn't provision (see
+`docs/architecture.md` and
+`docs/enterprise-features/advanced-network-ddos.md` — same gap,
+documented in both places).
 
-**Demo it against:** the `network-lb` module under
-`terraform/modules/load-balancer/network-lb/` — this is a genuinely
-different architecture from the rest of this lab (passthrough TCP/UDP, not
-HTTP(S)), so keep it in its own Terraform apply/destroy cycle rather than
-bundling it with the main HTTPS LB stack.
+## If you want to actually demo this
+
+You'd need to build a `terraform/modules/load-balancer/network-lb`
+module first (a `google_compute_region_backend_service` with
+`load_balancing_scheme = "EXTERNAL"`, `protocol = "TCP"` or `"UDP"`,
+fronting a target VM), then wire this module's `self_link` output into
+that backend service's `security_policy` field. Not built here —
+this lab's scope stopped at documenting the concept and building a
+working policy module, not standing up a second load balancer
+architecture just to demo one capability.

@@ -66,3 +66,11 @@ output "demo_log_level" {
 output "demo_user_ip_headers" {
   value = local.demo_user_ip_headers
 }
+
+# NOT consumed by environments/lab/main.tf's default concat() or module
+# instantiation — see terraform/policies/hierarchical-org-policy.tf and
+# modules/cloud-armor/hierarchical-policies/README.md for why this stays
+# a manual, deliberate apply rather than part of the routine lab workflow.
+output "hierarchical_example_rules" {
+  value = local.hierarchical_example_rules
+}

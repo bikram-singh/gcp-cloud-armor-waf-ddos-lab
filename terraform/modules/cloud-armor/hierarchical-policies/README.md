@@ -1,34 +1,58 @@
-# Hierarchical Security Policies — STUB, verify before use
+# hierarchical-policies module
 
-Cloud Armor's Hierarchical Security Policies (org/folder-level enforcement)
-went GA on **2025-09-24**. That's recent enough that I'm not confident
-asserting the exact Terraform resource name and schema from memory — the
-provider may expose this under a dedicated resource, or as an extension of
-the existing `google_compute_organization_security_policy` family used for
-hierarchical **firewall** policies (a related but different feature).
+No longer a stub — built against a confirmed-working resource family
+(`google_compute_organization_security_policy` +
+`_association` + `_rule`, all `google-beta`).
 
-**Before writing main.tf here:**
+## One residual uncertainty
 
-1. Check the current Google provider docs on the Terraform Registry:
-   https://registry.terraform.io/providers/hashicorp/google/latest/docs
-   — search "security policy" and "hierarchical" to find the GA resource.
-2. Confirm whether it's `google-beta` only or has graduated to the `google`
-   provider (recent GA features often sit in `google-beta` for a release
-   or two first).
-3. Confirm the association mechanism — likely a separate `_association`
-   resource binding the policy to a folder/org node, mirroring how
-   `google_compute_organization_security_policy_association` works for
-   firewall policies.
+The `type` argument (default `"CLOUD_ARMOR"`) wasn't exercised in the
+working example this module is based on. Verify it against the current
+Terraform Registry page for `google_compute_organization_security_policy`
+before your first apply — if the argument name or accepted value is
+wrong, `terraform plan` will reject it with a clear validation error, not
+fail silently.
 
-**What this module needs to do once confirmed:**
-- Create the policy at the org or folder level (`parent = "organizations/<id>"`
-  or `"folders/<id>"`)
-- Define rules (same rule shape as backend-policies: priority, action, match)
-- Associate the policy to one or more folders/projects so it actually
-  enforces (a policy with no association is inert)
+## Usage
 
-**Demo it against:** your existing GCP Org node — the same prerequisite
-your original slide deck flagged ("Need to have Org Node"). Confirm
-org-admin / `roles/orgpolicy.policyAdmin`-equivalent access before wiring
-this into the GitHub Actions apply workflow, since a permissions gap here
-will fail Actions mid-apply rather than at plan time.
+```hcl
+module "hierarchical_policy" {
+  source            = "../../modules/cloud-armor/hierarchical-policies"
+  parent            = "folders/351047376392" # gch-IT folder, per this project's org
+  attachment_id     = "folders/351047376392"
+  display_name      = "lab-hierarchical-policy"
+  association_name  = "lab-hierarchical-association"
+
+  rules = [
+    {
+      priority    = 100
+      action      = "deny(403)"
+      description = "Example folder-level deny — adjust for your demo"
+      expression  = "origin.region_code == 'US'"
+    },
+  ]
+}
+```
+
+## Prerequisites
+
+Requires the `roles/compute.orgSecurityPolicyAdmin` IAM role (confirmed
+role name via GCP's own CLI docs) on the target org/folder, plus
+`roles/compute.orgSecurityResourceAdmin` to create the association
+specifically. Neither of these is currently listed in
+`docs/iam-least-privilege.md` — that doc only covers the two
+project-scoped service accounts (lab VM, HCP Terraform/Actions). Add a
+short section there if you actually instantiate this module, since it's
+a genuinely different permission scope (org/folder, not project).
+
+## Why this isn't wired into environments/lab by default
+
+This lab's Cloud Armor demos are project-scoped (`baseline_policy`
+attached directly to backend services). A hierarchical policy is
+additive on top of that — it applies across every project under the
+folder/org node, not just this lab's project. Wiring it in by default
+would silently affect other projects under `gch-IT`
+(`gcphub-dev`, `gcphub-prod`) without their owners necessarily expecting
+it. Instantiate this module deliberately, in its own apply, when you're
+specifically ready to demo it — not as part of the routine
+`terraform-apply.yml` workflow.
