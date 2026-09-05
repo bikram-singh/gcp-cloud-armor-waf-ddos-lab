@@ -1,7 +1,7 @@
-# ---------------------------------------------------------------------------
-# Artifact Registry — pinned vuln-bank web image lives here. Build/push it
+﻿# ---------------------------------------------------------------------------
+# Artifact Registry â€” pinned vuln-bank web image lives here. Build/push it
 # with scripts/build-push-vulnbank-image.sh (see repo root) BEFORE running
-# `terraform apply` on this module — Terraform references the image by tag,
+# `terraform apply` on this module â€” Terraform references the image by tag,
 # it doesn't build it.
 # ---------------------------------------------------------------------------
 resource "google_artifact_registry_repository" "images" {
@@ -18,7 +18,7 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# Service account for both VMs — least-privilege: only what's needed to pull
+# Service account for both VMs â€” least-privilege: only what's needed to pull
 # from Artifact Registry. See docs/iam-least-privilege.md for the full
 # reasoning (this mirrors the same principle applied to the Actions SA).
 # ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ resource "google_project_iam_member" "lab_vm_logging_writer" {
 }
 
 # ---------------------------------------------------------------------------
-# nginx VM — simple backend for the path-based CEL demo (/goodpath, /badpath)
+# nginx VM â€” simple backend for the path-based CEL demo (/goodpath, /badpath)
 # ---------------------------------------------------------------------------
 resource "google_compute_instance" "nginx" {
   project      = var.project_id
@@ -59,7 +59,7 @@ resource "google_compute_instance" "nginx" {
   network_interface {
     network    = var.network_self_link
     subnetwork = var.subnetwork_self_link
-    access_config {} # ephemeral public IP — fine for a lab, remove for anything longer-lived
+
   }
 
   metadata_startup_script = file("${path.module}/startup-nginx.sh")
@@ -73,7 +73,7 @@ resource "google_compute_instance" "nginx" {
 }
 
 # ---------------------------------------------------------------------------
-# vuln-bank VM — pulls the pre-built pinned image, no build at boot
+# vuln-bank VM â€” pulls the pre-built pinned image, no build at boot
 # ---------------------------------------------------------------------------
 resource "google_compute_instance" "vulnbank" {
   project      = var.project_id
@@ -92,7 +92,7 @@ resource "google_compute_instance" "vulnbank" {
   network_interface {
     network    = var.network_self_link
     subnetwork = var.subnetwork_self_link
-    access_config {} # ephemeral public IP — see SECURITY-NOTICE.md before leaving this running
+
   }
 
   metadata_startup_script = templatefile("${path.module}/startup-vulnbank.sh.tpl", {

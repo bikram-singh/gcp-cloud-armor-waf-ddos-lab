@@ -1,4 +1,4 @@
-variable "name" {
+﻿variable "name" {
   type = string
 }
 
@@ -38,7 +38,7 @@ variable "capacity" {
   default = 100
 }
 
-variable "purposes" {
+variable "purpose" {
   type    = list(string)
   default = ["CLOUD_ARMOR"]
 }

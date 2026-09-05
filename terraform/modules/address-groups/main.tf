@@ -1,4 +1,4 @@
-# Address Groups — reusable named IP/CIDR collections referenced by Cloud
+﻿# Address Groups â€” reusable named IP/CIDR collections referenced by Cloud
 # Armor rules via `src_address_groups` in a rule's match config.
 #
 # NOTE: Using an address group with purpose CLOUD_ARMOR requires an active
@@ -20,6 +20,6 @@ resource "google_network_security_address_group" "this" {
   description = var.description
   type        = var.type # IPV4 | IPV6
   capacity    = var.capacity
-  purposes    = var.purposes # ["CLOUD_ARMOR"] or ["DEFAULT", "CLOUD_ARMOR"] to also share with Cloud NGFW
+  purpose     = var.purpose # ["CLOUD_ARMOR"] or ["DEFAULT", "CLOUD_ARMOR"] to also share with Cloud NGFW
   items       = var.items
 }

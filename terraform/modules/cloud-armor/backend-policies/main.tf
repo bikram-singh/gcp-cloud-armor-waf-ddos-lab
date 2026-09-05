@@ -1,8 +1,8 @@
-locals {
+﻿locals {
   # Split rules into the two match styles the underlying resource accepts:
   # a plain IP/address-group list (versioned_expr = SRC_IPS_V1) or a full
   # CEL expression. A rule qualifies for the IP bucket if it sets EITHER
-  # src_ip_ranges or src_address_groups (or both — GCP allows combining them,
+  # src_ip_ranges or src_address_groups (or both â€” GCP allows combining them,
   # matched as OR).
   ip_rules = {
     for r in var.rules : tostring(r.priority) => r
@@ -53,7 +53,6 @@ resource "google_compute_security_policy_rule" "global_ip" {
     versioned_expr = "SRC_IPS_V1"
     config {
       src_ip_ranges      = each.value.src_ip_ranges
-      src_address_groups = each.value.src_address_groups
     }
   }
 
@@ -144,10 +143,10 @@ resource "google_compute_security_policy_rule" "global_cel" {
     }
   }
 
-  # WAF field exclusions — fixes false positives by excluding a named
+  # WAF field exclusions â€” fixes false positives by excluding a named
   # header/cookie/query-param's VALUE from inspection (the name is still
   # inspected). This is a long-established Cloud Armor feature, schema
-  # should be stable — unlike the JA3/JA4 enforce_on_key values elsewhere
+  # should be stable â€” unlike the JA3/JA4 enforce_on_key values elsewhere
   # in this module, no verification caveat needed here.
   dynamic "preconfigured_waf_config" {
     for_each = (each.value.waf_exclusions != null && length(each.value.waf_exclusions) > 0) ? [1] : []
@@ -209,7 +208,6 @@ resource "google_compute_region_security_policy_rule" "regional_ip" {
   match {
     config {
       src_ip_ranges      = each.value.src_ip_ranges
-      src_address_groups = each.value.src_address_groups
     }
   }
 }
