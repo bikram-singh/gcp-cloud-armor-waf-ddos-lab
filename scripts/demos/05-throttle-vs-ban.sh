@@ -15,7 +15,7 @@ echo "Expect the last couple of requests to return 429."
 echo ""
 echo "=== Rate-based ban demo: /transfer, 7 rapid requests (limit is 5/min, then 5-min ban) ==="
 for i in $(seq 1 7); do
-  CODE=$(curl -sk -o /dev/null -w "%{http_code}" "https://${VULNBANK_LB_IP}/transfer")
+  CODE=$(curl -sk -X POST -o /dev/null -w "%{http_code}" "https://${VULNBANK_LB_IP}/transfer")
   echo "Request ${i}: HTTP ${CODE}"
 done
 echo "Expect requests 6-7 (and anything for the next 5 minutes) to be denied — not just 429, a hard ban."
