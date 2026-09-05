@@ -1,0 +1,3 @@
+[submodule "vulnerable-app"]
+	path = vulnerable-app
+	url = https://github.com/Commando-X/vuln-bank.git

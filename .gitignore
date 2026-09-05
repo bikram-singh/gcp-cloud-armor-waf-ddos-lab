@@ -1,0 +1,23 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# HCP Terraform / Terraform Cloud local plan files
+*.tfplan
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
