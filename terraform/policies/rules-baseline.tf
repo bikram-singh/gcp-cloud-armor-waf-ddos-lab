@@ -14,3 +14,5 @@
     },
   ]
 }
+
+# Trivial comment to trigger terraform-plan.yml for the first time
