@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values before
+# applying. This file is committed as a template only -- never commit
+# the real terraform.tfvars.
+project_id          = "your-project-id"
+vulnbank_image_tag  = "5e5ea54" # match lab's currently-promoted tag
+domain_base         = "gcpcloudhub.in"
+notification_email  = "you@example.com"

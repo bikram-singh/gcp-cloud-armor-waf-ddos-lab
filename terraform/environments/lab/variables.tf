@@ -52,3 +52,8 @@ variable "vulnbank_image_tag" {
   description = "Pinned vuln-bank image tag (matches vulnerable-app/NOTES.md's pinned commit). Build/push it first via scripts/build-push-vulnbank-image.ps1."
   type        = string
 }
+
+variable "notification_email" {
+  description = "Where Cloud Armor alerts go -- a real address you actually check."
+  type        = string
+}
