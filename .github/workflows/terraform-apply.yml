@@ -14,9 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write # required for Workload Identity Federation
 
-    # See terraform-plan.yml's comment: Local execution mode needs
-    # TF_VAR_* supplied explicitly, confirmed via a real stuck run.
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
       TF_VAR_project_id: ${{ vars.PROJECT_ID }}
@@ -36,6 +35,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/1022520543411/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider"
+          service_account: "github-actions-ci@project-cloud-armor.iam.gserviceaccount.com"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -48,6 +53,5 @@ jobs:
   # NOTE: -auto-approve here approves the plan from the Actions side. If
   # your HCP Terraform workspace is set to "Manual apply", the actual
   # apply still pauses in HCP Terraform's own UI for a human confirmation
-  # there, regardless of this flag. This lab's workspace is currently set
-  # to LOCAL execution mode -- HCP Terraform only stores state, the
-  # actual plan/apply runs on the Actions runner itself.
+  # there. This lab's workspace is in LOCAL execution mode -- HCP
+  # Terraform only stores state, plan/apply runs on the Actions runner.

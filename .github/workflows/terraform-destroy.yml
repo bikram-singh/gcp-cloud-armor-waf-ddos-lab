@@ -14,9 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write # required for Workload Identity Federation
 
-    # See terraform-plan.yml's comment: Local execution mode needs
-    # TF_VAR_* supplied explicitly, confirmed via a real stuck run.
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
       TF_VAR_project_id: ${{ vars.PROJECT_ID }}
@@ -29,6 +28,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/1022520543411/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider"
+          service_account: "github-actions-ci@project-cloud-armor.iam.gserviceaccount.com"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -48,7 +53,6 @@ jobs:
       - name: Terraform destroy
         run: terraform destroy -auto-approve -input=false
 
-# Requires two repository VARIABLES (not secrets), under Settings >
-# Secrets and variables > Actions > Variables tab:
-#   PROJECT_ID          = project-cloud-armor
-#   VULNBANK_IMAGE_TAG   = <your pinned vuln-bank commit hash>
+# Requires two repository VARIABLES: PROJECT_ID, VULNBANK_IMAGE_TAG.
+# Requires the github-actions-ci service account (Workload Identity
+# Federation, no key file -- this org's policy blocks key creation).

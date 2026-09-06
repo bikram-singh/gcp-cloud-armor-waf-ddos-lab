@@ -16,20 +16,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write # required for Workload Identity Federation
 
-    # This workspace uses HCP Terraform in LOCAL execution mode (state
-    # storage only -- confirmed necessary earlier in this project since
-    # Remote mode could not resolve ../../modules paths). Local mode does
-    # NOT auto-inject the workspace's stored Terraform variables the way
-    # Remote mode does -- those only apply when HCP Terraform itself runs
-    # the plan/apply. Since Actions is the one actually running Terraform
-    # here (same as any local machine would), the two required variables
-    # (project_id, vulnbank_image_tag) must be supplied explicitly via
-    # TF_VAR_* environment variables. Locally this is handled by a
-    # gitignored terraform.tfvars file, which of course does not exist in
-    # a fresh Actions checkout -- confirmed via a real stuck run where
-    # `terraform plan` hung waiting for an interactive prompt CI can never
-    # answer.
+    # See earlier comments in this file's git history for the full
+    # debugging trail: job-level TF_TOKEN (env vars don't persist across
+    # steps), TF_VAR_* for Local execution mode (workspace vars aren't
+    # auto-injected), a stale state lock, and finally -- confirmed via a
+    # real run -- the Actions runner had NO Google credentials at all.
+    # Fixed via Workload Identity Federation (no long-lived key, since
+    # this org's policy blocks service account key creation entirely).
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
       TF_VAR_project_id: ${{ vars.PROJECT_ID }}
@@ -42,6 +37,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/1022520543411/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider"
+          service_account: "github-actions-ci@project-cloud-armor.iam.gserviceaccount.com"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
