@@ -15,6 +15,11 @@ jobs:
     permissions:
       contents: read
 
+    # FIX: see terraform-plan.yml's comment -- job-level env, not per-step,
+    # confirmed necessary after a real first-run failure on that workflow.
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
+
     defaults:
       run:
         working-directory: terraform/environments/lab
@@ -25,19 +30,11 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
 
       - name: Terraform init
         run: terraform init
 
-      - name: Guard — confirmation must match the real project ID
-        # Deliberately stricter than terraform-apply.yml's guard: destroying
-        # infrastructure is far less reversible than applying it, so this
-        # requires typing the actual project ID (pulled from the HCP
-        # Terraform workspace's project_id variable via `terraform output`,
-        # if you add an output for it — otherwise set PROJECT_ID_EXPECTED
-        # as a repo variable below and keep it in sync manually).
+      - name: Guard -- confirmation must match the real project ID
         env:
           PROJECT_ID_EXPECTED: ${{ vars.PROJECT_ID }}
         run: |
@@ -48,12 +45,7 @@ jobs:
 
       - name: Terraform destroy
         run: terraform destroy -auto-approve
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
 
-# Requires a repository VARIABLE (not secret — it's not sensitive) named
-# PROJECT_ID set to your project id (e.g. project-cloud-armor), under
-# Settings > Secrets and variables > Actions > Variables tab. This is
-# intentionally separate from the HCP Terraform workspace's own
-# project_id Terraform variable — keep both in sync if you ever change
-# projects.
+# Requires a repository VARIABLE (not secret) named PROJECT_ID set to your
+# project id (e.g. project-cloud-armor), under Settings > Secrets and
+# variables > Actions > Variables tab.

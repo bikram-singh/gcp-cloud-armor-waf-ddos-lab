@@ -15,12 +15,17 @@ jobs:
     permissions:
       contents: read
 
+    # FIX: see terraform-plan.yml's comment -- job-level env, not per-step,
+    # confirmed necessary after a real first-run failure on that workflow.
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
+
     defaults:
       run:
         working-directory: terraform/environments/lab
 
     steps:
-      - name: Guard — require explicit confirmation
+      - name: Guard -- require explicit confirmation
         if: github.event.inputs.confirm != 'apply'
         run: |
           echo "::error::You must type 'apply' in the confirm field to run this workflow. Got: '${{ github.event.inputs.confirm }}'"
@@ -31,21 +36,19 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
 
       - name: Terraform init
         run: terraform init
 
       - name: Terraform apply
         run: terraform apply -auto-approve
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
 
   # NOTE: -auto-approve here approves the plan from the Actions side. If
-  # your HCP Terraform workspace is set to "Manual apply" (the default for
-  # most workspaces), the actual apply still pauses in HCP Terraform's own
-  # UI for a human confirmation there, regardless of this flag. Set the
-  # workspace to auto-apply if you want this workflow to be fully
-  # unattended — see docs/iam-least-privilege.md for why that trade-off
-  # matters for who can trigger this workflow.
+  # your HCP Terraform workspace is set to "Manual apply", the actual
+  # apply still pauses in HCP Terraform's own UI for a human confirmation
+  # there, regardless of this flag. Also note this lab's workspace is
+  # currently set to LOCAL execution mode (not Remote) -- confirmed
+  # necessary earlier in this project since Remote mode could not resolve
+  # ../../modules paths. In Local mode, HCP Terraform only stores state;
+  # the actual plan/apply runs wherever the CLI executes -- in this case,
+  # the GitHub Actions runner itself, same as it would on a local machine.
