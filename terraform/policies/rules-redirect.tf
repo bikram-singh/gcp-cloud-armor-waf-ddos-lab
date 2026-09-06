@@ -1,41 +1,46 @@
 # Redirect actions -- mirrors the original lab's reCAPTCHA + external 302
-# demo. Both rules trigger on a custom header (not path/content) so they
-# do not collide with the rate-limit rules already targeting /login and
-# /transfer -- see that file's own comment for why.
+# demo.
 #
-# PRIORITY: reCAPTCHA sits at 3500 (below path-based rules at 3000s, above
-# rate-limit at 4000s) -- moved here after a real test showed it was
-# originally unreachable at priority 5000, since the /login rate-limit
-# rule at 4000 always won first for the same traffic.
+# PRIORITY 3500 (reCAPTCHA): below path-based rules, above rate-limit --
+# moved here after a real test showed it was originally unreachable at
+# priority 5000, since the /login rate-limit rule at 4000 always won
+# first for the same traffic. See docs/enterprise-features/bot-management-tokens.md
+# for the confirmed finding that this rule is inert without an actual
+# reCAPTCHA Enterprise key regardless of priority.
 #
-# CONFIRMED FINDING (stronger than the original caveat): GOOGLE_RECAPTCHA
-# redirect rules require an actual reCAPTCHA Enterprise key configured on
-# the project/backend to be ENFORCED AT ALL -- not just to render a real
-# challenge. Tested directly: the EXTERNAL_302 rule below uses the
-# identical header-matching CEL pattern and fires correctly (confirmed via
-# a clean 302 + Location header). The GOOGLE_RECAPTCHA rule, using the
-# same pattern, never fired even after being moved to a higher-precedence
-# priority -- every test request instead fell through to the next rule
-# that matched (the /login rate-limit at 4000). This means an
-# unconfigured GOOGLE_RECAPTCHA rule appears to go effectively INERT
-# (silently skipped), not "fires but the challenge itself does not
-# render." Not independently re-verifiable without an actual reCAPTCHA
-# Enterprise key configured, which is a separate paid product from Cloud
-# Armor Enterprise -- see docs/enterprise-features/bot-management-tokens.md.
+# EXTERNAL_302: RETARGETED from unconditional root "/" to its own
+# dedicated path (/redirect-test), after the automated security
+# regression suite (scripts/security-regression-tests.sh) caught a real,
+# previously-unnoticed regression: retargeting the JA4 rate-limit rule to
+# "/" (rules-rate-limit-ja4.tf) created a NEW collision -- JA4's
+# unconditional root-path match, at priority 4025, sat below this rule's
+# original priority 5001, silently absorbing all root traffic (THROTTLE/
+# ACCEPT) before the redirect rule was ever evaluated. Confirmed via a
+# real log entry: enforcedSecurityPolicy.priority showed 4025 (JA4), not
+# 5001 (redirect), for a request that should have redirected.
+#
+# This is the fourth confirmed instance of the same recurring bug class
+# in this project: two rules matching overlapping/unconditional traffic
+# on the same path always have exactly one that matters, whichever sits
+# at the lower priority number -- and fixing one collision can silently
+# create another if the "fixed" rule's new match condition overlaps with
+# something else. The durable fix, applied consistently now: give each
+# rate-limit/redirect/challenge rule needing broad matching its OWN
+# dedicated path, never root or another rule's already-claimed path.
 locals {
   redirect_rules = [
     {
       priority      = 3500
       action        = "redirect"
-      description   = "Challenge suspicious traffic to /login with reCAPTCHA Enterprise (CONFIRMED inert without an actual reCAPTCHA Enterprise key configured -- see comment above)"
+      description   = "Challenge suspicious traffic to /login with reCAPTCHA Enterprise (CONFIRMED inert without an actual reCAPTCHA Enterprise key configured)"
       expression    = "request.path == '/login' && request.headers['x-lab-suspicious'] == 'true'"
       redirect_type = "GOOGLE_RECAPTCHA"
     },
     {
       priority        = 5001
       action          = "redirect"
-      description     = "External 302 redirect demo -- sends flagged traffic to a static notice page (CONFIRMED working via real test: clean 302 + Location header)"
-      expression      = "request.headers['x-lab-redirect-demo'] == 'true'"
+      description     = "External 302 redirect demo -- dedicated path (/redirect-test), fixed after regression testing caught a collision with JA4's root-path rate-limit rule"
+      expression      = "request.path == '/redirect-test' && request.headers['x-lab-redirect-demo'] == 'true'"
       redirect_type   = "EXTERNAL_302"
       redirect_target = "https://cloud.google.com/armor"
     },

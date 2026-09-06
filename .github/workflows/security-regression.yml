@@ -1,0 +1,28 @@
+name: Security Regression Tests
+
+on:
+  schedule:
+    # Daily at 06:00 UTC. Adjust as needed -- frequent enough to catch a
+    # regression quickly, infrequent enough not to be noisy or contribute
+    # meaningfully to the lab's traffic/cost.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {} # allows manual runs from the Actions tab too
+
+jobs:
+  regression:
+    name: Run security regression checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run security regression tests
+        run: bash scripts/security-regression-tests.sh
+
+      - name: Summarize failure
+        if: failure()
+        run: |
+          echo "::error::One or more security regression checks failed. This means a Cloud Armor rule that was previously confirmed working may have regressed (removed, reordered, or misconfigured). Review the job log above for which specific check failed, then compare against the corresponding rules-*.tf file and its documented expected behavior."
