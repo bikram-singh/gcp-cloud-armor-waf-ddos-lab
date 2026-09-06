@@ -53,3 +53,25 @@ purpose, the usual "it is just a lab, permissions do not matter much"
 reasoning does not fully apply here, an actually-compromised vuln-bank
 VM is a real scenario this lab invites by design, so keeping its service
 account narrowly scoped is the whole point, not a formality.
+
+## CI/CD service account (github-actions-ci)
+
+A separate service account from the lab VM's own
+(`cloud-armor-lab-vm`), used only by GitHub Actions via Workload
+Identity Federation (no key file -- this org's policy blocks service
+account key creation). See docs/cicd-setup.md for the full setup and
+the real errors that determined this exact role list:
+```
+roles/compute.admin
+roles/compute.securityAdmin
+roles/artifactregistry.admin
+roles/iam.serviceAccountUser
+roles/serviceusage.serviceUsageAdmin
+roles/resourcemanager.projectIamAdmin
+```
+The last role is easy to miss -- resource-specific admin roles
+(compute.admin, etc.) do NOT include permission to manage OTHER
+service accounts' project-level IAM bindings, which this project's
+Terraform config does (google_project_iam_member for the VM's own
+service account). Confirmed via a real 403 error during this
+project's first genuine CI run.

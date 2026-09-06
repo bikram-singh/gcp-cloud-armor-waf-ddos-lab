@@ -46,3 +46,18 @@ pricing-cost-awareness.md. Do not enable it just to complete this lab
 unless you specifically want to demo the Enterprise-only sections live,
 the documented-only approach in enterprise-features/ is a legitimate way
 to cover them in the article without the ongoing subscription cost.
+
+## Confirmed finding: GOOGLE_RECAPTCHA redirect rules are inert without an actual reCAPTCHA Enterprise key
+
+Real testing in this project confirmed something stronger than the
+general "requires Enterprise" caveat: an unconfigured GOOGLE_RECAPTCHA
+redirect rule does not merely fail to render a real challenge -- it
+appears to go completely INERT (silently skipped by Cloud Armor's
+enforcement engine). Proven by comparison against a working
+EXTERNAL_302 rule using the identical header-matching CEL syntax at a
+higher-precedence priority: the EXTERNAL_302 rule fired correctly
+every time, while GOOGLE_RECAPTCHA never fired under the same
+conditions, with traffic instead falling through to the next rule
+that matched. Not independently re-verifiable without an actual
+reCAPTCHA Enterprise key configured (a separate paid product from
+Cloud Armor Enterprise itself).
