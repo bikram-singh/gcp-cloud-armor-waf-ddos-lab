@@ -125,9 +125,11 @@ module "baseline_policy" {
 
   log_level               = module.policies.demo_log_level
   user_ip_request_headers = module.policies.demo_user_ip_headers
+  json_parsing            = "STANDARD" # TEMP TEST: was DISABLED -- testing whether STANDARD + field exclusion fixes the registration false positive while keeping sensitivity 2. See rules-waf-tuning.tf.
 
   rules = concat(
     module.policies.baseline_rules,
+    # module.policies.preconfigured_waf_rules,  # TEMP: swapped for waf_tuning_rules test
     module.policies.preconfigured_waf_rules,
     module.policies.ip_based_rules,
     module.policies.ipv6_rules,
@@ -141,9 +143,6 @@ module "baseline_policy" {
     module.policies.preview_test_rules,
     # module.policies.address_group_rules,       # Enterprise required
     # module.policies.threat_intelligence_rules,  # Enterprise required
-    # module.policies.waf_tuning_rules is intentionally NOT included here --
-    # it's a swap-in replacement for preconfigured_waf_rules, not additive.
-    # See rules-waf-tuning.tf for the demo procedure.
   )
 }
 
