@@ -87,6 +87,7 @@ resource "google_compute_backend_service" "this" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
   health_checks         = [google_compute_health_check.this.id]
   security_policy       = var.security_policy_self_link
+  edge_security_policy   = var.edge_security_policy_self_link
 
   backend {
     group = var.instance_group_self_link
@@ -151,3 +152,4 @@ resource "google_compute_global_forwarding_rule" "ipv6" {
   ip_address            = google_compute_global_address.ipv6[0].id
   load_balancing_scheme = "EXTERNAL_MANAGED"
 }
+
