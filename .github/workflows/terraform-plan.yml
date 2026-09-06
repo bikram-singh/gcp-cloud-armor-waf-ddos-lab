@@ -5,7 +5,6 @@ on:
     paths:
       - "terraform/**"
 
-# Avoid piling up redundant plans if someone pushes multiple commits fast
 concurrency:
   group: terraform-plan-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -16,7 +15,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write # needed to post the plan as a PR comment
+      pull-requests: write
+      id-token: write # required for Workload Identity Federation
+
+    # See earlier comments in this file's git history for the full
+    # debugging trail: job-level TF_TOKEN (env vars don't persist across
+    # steps), TF_VAR_* for Local execution mode (workspace vars aren't
+    # auto-injected), a stale state lock, and finally -- confirmed via a
+    # real run -- the Actions runner had NO Google credentials at all.
+    # Fixed via Workload Identity Federation (no long-lived key, since
+    # this org's policy blocks service account key creation entirely).
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
+      TF_VAR_project_id: ${{ vars.PROJECT_ID }}
+      TF_VAR_vulnbank_image_tag: ${{ vars.VULNBANK_IMAGE_TAG }}
 
     defaults:
       run:
@@ -25,18 +37,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        # No submodule checkout needed here — Terraform doesn't touch
-        # vulnerable-app's content directly, only the pre-built image tag.
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/1022520543411/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider"
+          service_account: "github-actions-ci@project-cloud-armor.iam.gserviceaccount.com"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: true # wraps stdout/exitcode into step outputs, used below
-        env:
-          # HCP Terraform API token — add as a repo secret named exactly
-          # this (Settings > Secrets and variables > Actions). Generate it
-          # from your HCP Terraform user settings > Tokens.
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
+          terraform_wrapper: true
 
       - name: Terraform fmt check
         id: fmt
@@ -51,16 +62,13 @@ jobs:
 
       - name: Terraform plan
         id: plan
-        run: terraform plan -no-color
+        run: terraform plan -no-color -input=false
         continue-on-error: true
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
 
       - name: Post plan as PR comment
         uses: actions/github-script@v7
         env:
           PLAN: "${{ steps.plan.outputs.stdout }}"
-          FMT_OUTCOME: "${{ steps.fmt.outcome }}"
         with:
           script: |
             const output = `#### Terraform Format \`${{ steps.fmt.outcome }}\`

@@ -14,13 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write # required for Workload Identity Federation
+
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
+      TF_VAR_project_id: ${{ vars.PROJECT_ID }}
+      TF_VAR_vulnbank_image_tag: ${{ vars.VULNBANK_IMAGE_TAG }}
 
     defaults:
       run:
         working-directory: terraform/environments/lab
 
     steps:
-      - name: Guard — require explicit confirmation
+      - name: Guard -- require explicit confirmation
         if: github.event.inputs.confirm != 'apply'
         run: |
           echo "::error::You must type 'apply' in the confirm field to run this workflow. Got: '${{ github.event.inputs.confirm }}'"
@@ -29,23 +35,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/1022520543411/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider"
+          service_account: "github-actions-ci@project-cloud-armor.iam.gserviceaccount.com"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
 
       - name: Terraform init
         run: terraform init
 
       - name: Terraform apply
-        run: terraform apply -auto-approve
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
+        run: terraform apply -auto-approve -input=false
 
   # NOTE: -auto-approve here approves the plan from the Actions side. If
-  # your HCP Terraform workspace is set to "Manual apply" (the default for
-  # most workspaces), the actual apply still pauses in HCP Terraform's own
-  # UI for a human confirmation there, regardless of this flag. Set the
-  # workspace to auto-apply if you want this workflow to be fully
-  # unattended — see docs/iam-least-privilege.md for why that trade-off
-  # matters for who can trigger this workflow.
+  # your HCP Terraform workspace is set to "Manual apply", the actual
+  # apply still pauses in HCP Terraform's own UI for a human confirmation
+  # there. This lab's workspace is in LOCAL execution mode -- HCP
+  # Terraform only stores state, plan/apply runs on the Actions runner.
