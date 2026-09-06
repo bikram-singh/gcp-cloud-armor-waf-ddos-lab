@@ -15,10 +15,12 @@ jobs:
     permissions:
       contents: read
 
-    # FIX: see terraform-plan.yml's comment -- job-level env, not per-step,
-    # confirmed necessary after a real first-run failure on that workflow.
+    # See terraform-plan.yml's comment: Local execution mode needs
+    # TF_VAR_* supplied explicitly, confirmed via a real stuck run.
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
+      TF_VAR_project_id: ${{ vars.PROJECT_ID }}
+      TF_VAR_vulnbank_image_tag: ${{ vars.VULNBANK_IMAGE_TAG }}
 
     defaults:
       run:
@@ -44,8 +46,9 @@ jobs:
           fi
 
       - name: Terraform destroy
-        run: terraform destroy -auto-approve
+        run: terraform destroy -auto-approve -input=false
 
-# Requires a repository VARIABLE (not secret) named PROJECT_ID set to your
-# project id (e.g. project-cloud-armor), under Settings > Secrets and
-# variables > Actions > Variables tab.
+# Requires two repository VARIABLES (not secrets), under Settings >
+# Secrets and variables > Actions > Variables tab:
+#   PROJECT_ID          = project-cloud-armor
+#   VULNBANK_IMAGE_TAG   = <your pinned vuln-bank commit hash>

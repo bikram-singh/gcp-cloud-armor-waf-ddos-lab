@@ -15,10 +15,12 @@ jobs:
     permissions:
       contents: read
 
-    # FIX: see terraform-plan.yml's comment -- job-level env, not per-step,
-    # confirmed necessary after a real first-run failure on that workflow.
+    # See terraform-plan.yml's comment: Local execution mode needs
+    # TF_VAR_* supplied explicitly, confirmed via a real stuck run.
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_APP_TERRAFORM_IO }}
+      TF_VAR_project_id: ${{ vars.PROJECT_ID }}
+      TF_VAR_vulnbank_image_tag: ${{ vars.VULNBANK_IMAGE_TAG }}
 
     defaults:
       run:
@@ -41,14 +43,11 @@ jobs:
         run: terraform init
 
       - name: Terraform apply
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve -input=false
 
   # NOTE: -auto-approve here approves the plan from the Actions side. If
   # your HCP Terraform workspace is set to "Manual apply", the actual
   # apply still pauses in HCP Terraform's own UI for a human confirmation
-  # there, regardless of this flag. Also note this lab's workspace is
-  # currently set to LOCAL execution mode (not Remote) -- confirmed
-  # necessary earlier in this project since Remote mode could not resolve
-  # ../../modules paths. In Local mode, HCP Terraform only stores state;
-  # the actual plan/apply runs wherever the CLI executes -- in this case,
-  # the GitHub Actions runner itself, same as it would on a local machine.
+  # there, regardless of this flag. This lab's workspace is currently set
+  # to LOCAL execution mode -- HCP Terraform only stores state, the
+  # actual plan/apply runs on the Actions runner itself.
