@@ -1,271 +1,312 @@
-# gcp-cloud-armor-waf-ddos-lab
+<div align="center">
 
-A hands-on GCP Cloud Armor lab — WAF, DDoS/rate-limiting, bot mitigation,
-regional and edge policy precedence, monitoring, and CI/CD — provisioned
-with Terraform, tested against a deliberately vulnerable banking web app,
-and validated with real traffic, real logs, and real attack payloads
-rather than just documentation claims.
+# 🛡️ gcp-cloud-armor-waf-ddos-lab
 
-This isn't a "here's the happy path" tutorial repo. Every capability listed
-below was actually exercised against live infrastructure, and a meaningful
-number of the findings **corrected an initial assumption** or **caught a
-real bug** — those are called out explicitly, because that's the part
-worth reading if you're evaluating Cloud Armor for real.
+### Cloud Armor WAF & DDoS Protection · Terraform · Live Attack Testing · Real Findings, Not Just Docs
 
-> ⚠️ **Security notice:** this repo deploys an intentionally vulnerable
-> application behind a public GCP Load Balancer for demonstration purposes.
-> See [`SECURITY-NOTICE.md`](./SECURITY-NOTICE.md) before deploying anything
-> in this repo to a real project. Don't leave it running longer than you're
-> actively testing — it *will* attract bot/scanner traffic the moment it's
-> reachable on a real domain (confirmed: this happened within the same
-> session it went live).
+[![Terraform](https://img.shields.io/badge/Terraform-1.15-844FBA?logo=terraform&logoColor=white)](https://www.terraform.io)
+[![Google Cloud](https://img.shields.io/badge/Google_Cloud-Cloud_Armor-4285F4?logo=googlecloud&logoColor=white)](https://cloud.google.com/armor)
+[![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)](https://github.com/features/actions)
+[![WIF](https://img.shields.io/badge/Auth-Workload_Identity_Federation-FF6D00?logo=googlecloud&logoColor=white)](https://cloud.google.com/iam/docs/workload-identity-federation)
+[![Regression Tests](https://img.shields.io/badge/Security_Regression-Daily_Automated-2ECC71?logo=checkmarx&logoColor=white)](.github/workflows/security-regression.yml)
 
-## Why Cloud Armor — the actual case for it
+*A hands-on GCP Cloud Armor lab — WAF, rate limiting, bot mitigation, regional and edge policy precedence, monitoring, and CI/CD — built against a live, deliberately vulnerable banking app. Every capability below was actually attacked, tested, and confirmed against real infrastructure, not assumed from documentation. Where testing corrected an initial assumption or caught a real bug, that's called out explicitly, because that's the part worth reading if you're evaluating Cloud Armor for real.*
 
-Having now tested this hands-on rather than just read the docs, here's
-what Cloud Armor genuinely buys you, backed by what's demonstrated in this
-repo:
+</div>
 
-- **Blocks real attacks before they reach your app.** Confirmed here with
-  live SQL injection and stored-XSS payloads against a real, deliberately
-  vulnerable banking app — Cloud Armor stopped every one at the edge,
-  without the app itself needing any input validation of its own.
-- **Rate limiting and bot mitigation without touching app code.** Brute-force
-  login attempts, scripted attacks, and abusive clients get throttled or
-  banned at the load balancer, confirmed with real threshold tests, before
-  they ever reach a database or business-logic layer.
-- **Defense in depth, evaluated in layers.** Edge policies, regional
-  policies, and backend policies each evaluate independently — confirmed
-  here that an edge-layer deny wins even when a backend-layer default-allow
-  exists, meaning a compromised or misconfigured backend policy doesn't
-  automatically expose you if the edge layer is doing its job.
-- **Visibility that doesn't require you to build it yourself.** Every
-  enforcement decision is logged with enough detail (which rule, which
-  field matched, TLS fingerprints, geo/ASN) to actually investigate an
-  incident — confirmed by using these exact logs to diagnose every finding
-  in this repo.
-- **It's also not magic, and this repo shows where the edges are.** A
-  misconfigured WAF sensitivity level can block *legitimate* users just as
-  effectively as it blocks attackers — confirmed here with a real
-  registration-blocking false positive. Knowing that failure mode before
-  you hit it in production is arguably more valuable than the happy-path
-  demos alone.
+---
 
-## What's actually demonstrated here (tested, not just documented)
+## 📋 Table of Contents
 
-Every item below was exercised against live infrastructure with real
-requests, and the result (confirmed working, or corrected from an initial
-assumption) is documented at the point in the code/docs where it's relevant.
+- [Overview](#-overview)
+- [Why Cloud Armor](#-why-cloud-armor--the-actual-case-for-it)
+- [Architecture](#-architecture)
+- [Capabilities — Tested vs. Documented-Only](#-capabilities--tested-vs-documented-only)
+- [Real Findings — Not Just a Feature Tour](#-real-findings--not-just-a-feature-tour)
+- [The Recurring Bug Class](#-the-recurring-bug-class)
+- [CI/CD Pipeline](#️-cicd-pipeline)
+- [Monitoring, Logging & Incident Response](#-monitoring-logging--incident-response)
+- [Complete Tech & Tool Inventory](#-complete-tech--tool-inventory)
+- [Testing](#-testing)
+- [Multi-Environment Structure](#-multi-environment-structure)
+- [Known Limitations](#️-known-limitations)
+- [Prerequisites & Getting Started](#-prerequisites--getting-started)
+- [Teardown](#-teardown)
+- [Vulnerable App](#-vulnerable-app)
+- [Repository](#-repository)
 
-**Core WAF & attack protection**
-- OWASP preconfigured WAF rules (SQLi, XSS) — confirmed blocking 4 distinct
-  real SQLi payload shapes (4 different CRS rule IDs caught across testing)
-  and a real stored-XSS payload against the vulnerable app's own documented
-  vulnerability
-- WAF sensitivity levels — confirmed sensitivity 2 catches more payload
-  shapes than sensitivity 1, **and** confirmed sensitivity 2 causes a
-  severe false positive (blocks all new user registration) — this repo
-  ships sensitivity 1 as the safe default specifically because of that
-  finding
-- Field-level WAF exclusions — tested as an alternative to a blanket
-  sensitivity change; confirmed it fixes one endpoint's false positive
-  while **silently disabling protection on a different endpoint** that
-  happens to share the same field name. Documented as a real, non-obvious
-  risk, not shipped as the default.
+---
 
-**Rate limiting & bot mitigation**
-- IP-based throttle (429) and rate-based ban (403, timed) — both confirmed
-  with real threshold tests and log evidence
-- JA3 and JA4 TLS fingerprint-based rate limiting — confirmed via real
-  browser-vs-curl tests: a client hitting its own rate limit doesn't affect
-  a different client (different TLS fingerprint) on the same real IP
+## 🌐 Overview
 
-**Access control**
-- IP/CIDR and ASN-based allow/deny rules
-- Geo-blocking — confirmed with a real request from an actual `us-central1`
-  origin (not simulated), correctly denied by a region-based rule
-- IPv6 support — provisioned and reachable in principle; full end-to-end
-  verification wasn't possible from this network (no outbound IPv6), an
-  honest environment limitation rather than a gap in the work
-- `user_ip_request_headers` (trusting a proxy's forwarded-IP header) —
-  tested and the actual scope turned out narrower than initially assumed:
-  it does **not** make plain IP-match or CEL `origin.ip`/`origin.asn` rules
-  trust a spoofed header, but it **does** correctly affect rate-limit
-  keying (`enforce_on_key = "XFF_IP"`) — both confirmed via isolated tests
+This project answers one question end to end: **what does Cloud Armor actually do when you point real attacks at it, not simulated ones?**
 
-**Redirect & challenge actions**
-- External 302 redirect — confirmed working
-- reCAPTCHA Enterprise challenge — confirmed the rule goes effectively
-  **inert** without an actual reCAPTCHA Enterprise key configured (a
-  stronger finding than "won't render a visual challenge")
+It isn't a tutorial repo that shows the happy path. It's a working lab where SQL injection, XSS, brute-force login attempts, geo-spoofed traffic, and TLS-fingerprint evasion were all tried for real against a live, deliberately vulnerable banking app sitting behind Cloud Armor — and where several initial assumptions about how specific settings behave turned out to be wrong, corrected only by testing against real infrastructure and real logs.
 
-**Policy architecture**
-- Backend security policies (the default, most common attachment point)
-- Regional backend security policies — built and tested end-to-end on a
-  real regional external Application LB; confirmed a `google-beta`
-  provider requirement and an explicit `capacity_scaler` field requirement
-  not needed on global backend services
-- Edge security policies and Edge-vs-Backend precedence — confirmed an
-  edge-layer deny wins before the backend policy is even evaluated (the
-  backend decision doesn't appear in the log at all for a request an edge
-  rule already denied); also confirmed edge policies on standard backend
-  services only support IP-range matches, not CEL expressions
-- Preview mode — confirmed via a distinct `previewSecurityPolicy` log
-  field: a rule in preview logs what it *would* have done without actually
-  enforcing it
+### 🔑 Key Facts
 
-**Operational maturity**
-- Automated security regression testing, running daily in CI — and this
-  isn't a hypothetical safety net: **it already caught a real regression**
-  on its first run (a rate-limit rule fix earlier in this project had
-  silently broken an unrelated redirect rule sharing the same path)
-- Cloud Monitoring alerting — a deny-rate-spike alert and a
-  policy-change-detection alert, both live and wired to a real
-  notification channel
-- BigQuery log export with example analysis queries (top blocked IPs,
-  SQLi attempts over time, denies by rule)
-- A working CI/CD pipeline (GitHub Actions, Terraform, HCP Terraform,
-  Workload Identity Federation) — genuinely working end-to-end, not just
-  written; getting there surfaced six distinct real bugs, all fixed and
-  documented in [`docs/cicd-setup.md`](./docs/cicd-setup.md)
-- Multi-environment structure (a `staging` template alongside the live
-  `lab` environment) and a documented promotion workflow
-- An incident response runbook grounded in this project's own confirmed
-  findings, not generic advice
+| Property | Value |
+|---|---|
+| 🏗️ **IaC Engine** | Terraform, real `plan` / `apply` / `destroy` against live GCP |
+| ☁️ **Cloud Platform** | Google Cloud Platform (Cloud Armor Standard tier, no Enterprise subscription) |
+| 🎯 **Target App** | [`Commando-X/vuln-bank`](https://github.com/Commando-X/vuln-bank) — a real, deliberately vulnerable banking web app, pinned as a git submodule |
+| 🔐 **Auth** | Workload Identity Federation for CI/CD — zero service account key files |
+| 🧪 **Testing** | Automated daily security regression suite against live endpoints — already caught a real regression on its first run |
+| 📊 **Monitoring** | Cloud Monitoring alert policies (deny-rate spike, policy-change detection) + BigQuery log export |
+| 📦 **CI/CD** | GitHub Actions — plan/apply/destroy workflows, all genuinely working end to end |
+| 📝 **Docs** | Every `rules-*.tf` file's comments carry the real evidence (log excerpts, error messages) behind that capability's confirmed behavior |
 
-**Documented but not independently demonstrated** (genuine limitations,
-stated plainly rather than glossed over):
-- Enterprise-tier features (Adaptive Protection, Threat Intelligence,
-  Advanced Network DDoS, DDoS Attack Visibility, SCC integration, Address
-  Groups enforcement) — this project doesn't have a Cloud Armor Enterprise
-  subscription; each is documented in
-  [`docs/enterprise-features/`](./docs/enterprise-features/) based on
-  public documentation, clearly marked as not independently verified here
-- Hierarchical (org/folder) policies — the module exists and is documented,
-  but applying it needs org-admin access this project didn't exercise
-  against a real org hierarchy end-to-end
+### ✨ What It Does
 
-See [`docs/architecture.md`](./docs/architecture.md) and
-[`docs/standard-vs-enterprise.md`](./docs/standard-vs-enterprise.md) for
-the full breakdown, and browse `terraform/policies/*.tf` directly — every
-rule file's comments carry the real evidence (log excerpts, error
-messages, the actual test that confirmed or corrected the assumption) for
-that specific capability.
+| Capability | Description |
+|---|---|
+| 🧱 **WAF protection, live-tested** | OWASP preconfigured SQLi/XSS rules, confirmed blocking 4 distinct real payload shapes and a real stored-XSS exploit against the app's own documented vulnerability |
+| 🚦 **Rate limiting & bot mitigation** | IP throttle/ban and JA3/JA4 TLS-fingerprint keying, confirmed via real browser-vs-curl split tests |
+| 🌍 **Access control** | IP/CIDR, ASN, and geo-blocking — geo-blocking confirmed with a real request from an actual `us-central1` VM, not simulated |
+| 🏛️ **Policy architecture, precedence tested** | Backend, regional, and edge security policies — confirmed edge-layer denies win before the backend policy is even evaluated |
+| 🔁 **Redirect & challenge actions** | External 302 confirmed working; reCAPTCHA Enterprise confirmed **inert** without an actual Enterprise key — stronger than the documented caveat |
+| 🩺 **Preview mode, confirmed via logs** | A rule in preview mode logs what it would have done (`previewSecurityPolicy`) without enforcing it |
+| 🤖 **Automated regression testing** | Runs daily against live endpoints; already caught a real, previously-unnoticed regression on its first run |
+| 📡 **Monitoring & alerting** | Deny-rate-spike and policy-change alert policies, wired to a real email notification channel |
+| 📈 **BigQuery log export** | All LB/Cloud Armor logs exported for analysis beyond ad-hoc `gcloud logging read` queries |
+| ⚙️ **Working CI/CD** | GitHub Actions + Terraform + HCP Terraform + WIF, genuinely functional after finding and fixing 6 real integration bugs |
 
-## Repo structure
+---
+
+## 💡 Why Cloud Armor — the actual case for it
+
+Having tested this hands-on rather than just read the docs:
+
+- **Blocks real attacks before they reach your app.** Confirmed with live SQL injection and stored-XSS payloads against a real vulnerable banking app — Cloud Armor stopped every one at the edge, with zero input validation on the app's own side.
+- **Rate limiting and bot mitigation without touching app code.** Brute-force login attempts and scripted abuse get throttled or banned at the load balancer, confirmed with real threshold tests, before reaching any database or business logic.
+- **Defense in depth, evaluated in layers, confirmed independently.** An edge-layer deny wins even when a backend-layer default-allow exists — a misconfigured backend policy doesn't automatically expose you if the edge layer is doing its job.
+- **Real investigative visibility.** Every enforcement decision logs enough detail (which rule, which field matched, TLS fingerprints, geo/ASN) to actually diagnose an incident — every finding in this repo was diagnosed using exactly these logs, nothing more.
+- **It also has real, non-obvious failure modes — and this repo shows where they are.** A misconfigured WAF sensitivity level blocked *legitimate* user registration outright in testing here. Knowing that failure mode before hitting it in production is arguably as valuable as the attack-blocking demos themselves.
+
+---
+
+## 🏛️ Architecture
 
 ```
-gcp-cloud-armor-waf-ddos-lab/
-├── .gitmodules                       # vulnerable-app pinned to Commando-X/vuln-bank @ fixed commit
-├── terraform/
-│   ├── modules/
-│   │   ├── compute/                  # nginx VM + vuln-bank VM (Flask app on :5000)
-│   │   ├── instance-groups/          # unmanaged IGs
-│   │   ├── load-balancer/
-│   │   │   └── https-lb/             # HTTPS LB -- self-signed or Google-managed cert,
-│   │   │                             # optional IPv6 frontend, optional edge_security_policy
-│   │   ├── cloud-armor/
-│   │   │   ├── backend-policies/     # global AND regional (var.regional), confirmed both work
-│   │   │   └── edge-policies/        # confirmed: IP-range matches only, no CEL
-│   │   ├── address-groups/           # built; enforcement requires Enterprise, confirmed via
-│   │   │                             # a real API error, not just documentation
-│   │   ├── monitoring/                # Cloud Monitoring alert policies + notification channel
-│   │   └── log-export/                # BigQuery sink for LB/Cloud Armor logs
-│   ├── environments/
-│   │   ├── README.md                  # multi-environment promotion workflow
-│   │   ├── lab/                       # ACTIVELY DEPLOYED -- this whole project's test sandbox
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   ├── monitoring.tf
-│   │   │   └── backend.tf             # HCP Terraform remote state, LOCAL execution mode
-│   │   └── staging/                   # NOT YET APPLIED -- clean reference environment,
-│   │                                   # confirmed-safe config only, monitoring/log-export
-│   │                                   # wired in from the start
-│   └── policies/
-│       ├── rules-baseline.tf          # deny-all + a real allow rule (NOT the priority-10 bug
-│       │                              # this project shipped with initially -- see its comment)
-│       ├── rules-ip-based.tf          # IP/ASN allow-deny
-│       ├── rules-ip-based-ipv6.tf
-│       ├── rules-user-ip-header.tf    # corrected scope, see comment -- XFF_IP rate-limit only
-│       ├── rules-address-groups.tf    # Enterprise required, confirmed via real error
-│       ├── rules-geo-based.tf         # confirmed via a real us-central1-origin test
-│       ├── rules-path-based.tf
-│       ├── rules-rate-limit.tf        # throttle + ban on vuln-bank /login, /transfer
-│       ├── rules-rate-limit-ja3.tf    # own dedicated path -- see comment on why
-│       ├── rules-rate-limit-ja4.tf    # own dedicated path -- see comment on why
-│       ├── rules-redirect.tf          # reCAPTCHA (confirmed inert w/o Enterprise) + 302
-│       ├── rules-preconfigured-waf.tf # sensitivity 1 -- see comment for the registration
-│       │                              # false-positive finding that decided this
-│       ├── rules-waf-tuning.tf        # field-exclusion test -- see comment for the real risk found
-│       ├── rules-threat-intelligence.tf   # Enterprise required, excluded from the applied policy
-│       ├── rules-logging-modes.tf     # corrected: no observed difference NORMAL vs VERBOSE
-│       ├── rules-preview-test.tf      # preview mode, confirmed via previewSecurityPolicy log field
-│       └── rules-xff-ip-test.tf       # kept as an empty list -- see file comment
-├── .github/workflows/
-│   ├── terraform-plan.yml             # WORKING -- Workload Identity Federation, TF_VAR_* injection
-│   ├── terraform-apply.yml
-│   ├── terraform-destroy.yml
-│   └── security-regression.yml        # daily automated regression run -- already caught a real bug
-├── scripts/
-│   ├── security-regression-tests.sh   # the suite security-regression.yml runs
-│   ├── build-push-vulnbank-image.ps1  # normalizes line endings in a temp copy, never touches
-│   │                                  # the pinned submodule
-│   └── demos/                         # manual demo scripts, one per capability above
-├── vulnerable-app/                    # git submodule -> Commando-X/vuln-bank (MIT), pinned commit
-├── docs/
-│   ├── architecture.md                # includes a real gotcha: unmanaged instance groups
-│   │                                  # silently emptying after VM replacement
-│   ├── standard-vs-enterprise.md      # includes the confirmed reCAPTCHA-without-Enterprise finding
-│   ├── cicd-setup.md                  # the full CI/CD debugging journey -- 6 real bugs, all fixed
-│   ├── iam-least-privilege.md         # includes the CI service account's confirmed real role list
-│   ├── incident-response-runbook.md   # attack vs. false-positive triage, grounded in real findings
-│   ├── dashboard-queries/             # example BigQuery SQL for a Looker Studio dashboard
-│   ├── enterprise-features/           # documented-only, clearly marked as such
-│   ├── alternate-backends/
-│   ├── service-mesh-rate-limiting.md
-│   └── pricing-cost-awareness.md
-├── README.md
-└── SECURITY-NOTICE.md
+                    Internet
+                       │
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+  nginx-lab.<domain>          vulnbank-lab.<domain>
+  (Google-managed cert)       (Google-managed cert, IPv6 frontend)
+        │                             │
+   nginx-https-proxy          vulnbank-https-proxy
+        │                             │
+   nginx-backend  ◄── shared ──►  vulnbank-backend
+        │         Cloud Armor          │
+        │       (lab-baseline-policy)  │
+        ▼                             ▼
+  nginx VM (path-demo)     vulnbank VM (Flask, :5000)
+                          Commando-X/vuln-bank, pinned commit
+
+  Cloud Armor policy layers (confirmed via real testing):
+    Edge policy      ──► evaluated FIRST, independently of backend
+    Backend policy   ──► WAF, rate-limit, IP/geo/redirect rules
+    Regional policy  ──► separate policy type, own regional LB required
+
+  Cross-cutting (always-on):
+    Cloud Monitoring  ── deny-rate-spike + policy-change alerts
+    BigQuery export   ── all LB/Cloud Armor logs
+    Daily regression  ── scripts/security-regression-tests.sh via Actions
 ```
 
-## Deployment approach
+### 🔄 What's Actually Live vs. What Was Temporary
 
-**Infrastructure — Terraform + GitHub Actions, genuinely working end to
-end.** `terraform-plan.yml` runs on PR and posts the plan as a comment;
-`terraform-apply.yml` and `terraform-destroy.yml` are manual-dispatch with
-confirmation guards. Authentication to GCP uses Workload Identity
-Federation (no service account key file — this org's policy blocks key
-creation entirely, which is itself a good default to copy). See
-[`docs/cicd-setup.md`](./docs/cicd-setup.md) for the complete, honest
-account of what it took to get this actually working, including every
-real error hit along the way.
+| Component | Status |
+|---|---|
+| `lab-baseline-policy` + both LBs | **Live** — the actively deployed environment this whole project tested against |
+| Regional backend security policy demo | **Torn down** — built and tested end to end on a temporary regional LB stack, confirmed working, removed after |
+| Edge-vs-backend precedence demo | **Torn down** — same pattern, confirmed via real log evidence, removed after |
+| Monitoring, BigQuery export | **Live** — wired into the actual `lab` environment |
+| `staging` environment | **Not yet applied** — a ready-to-use template, deliberately not deployed to avoid tripling cost for a single-operator lab |
 
-**Automated security regression testing** runs daily via
-`security-regression.yml`, hitting the live endpoints with real payloads
-and asserting the expected Cloud Armor response — not a mock, the actual
-deployed policy. See [`scripts/security-regression-tests.sh`](./scripts/security-regression-tests.sh).
+---
 
-**Manual/scripted demos** (`scripts/demos/`) cover capabilities that don't
-suit automated CI well — geo-blocking needs a real non-local origin,
-reCAPTCHA needs a real browser, JA3/JA4 needs a genuinely different TLS
-client. Run these from your own machine.
+## 🎯 Capabilities — Tested vs. Documented-Only
 
-## Prerequisites
+| Capability | Status | Real Evidence |
+|---|---|---|
+| SQLi (OWASP preconfigured) | ✅ Tested | 4 distinct real payload shapes, 4 different CRS rule IDs caught (`942100`, `942180`, `942190`, `942200`) |
+| XSS (OWASP preconfigured) | ✅ Tested | Real stored-XSS payload against vuln-bank's documented bio-field vulnerability, blocked |
+| WAF sensitivity tuning | ✅ Tested | Sensitivity 2 confirmed to block **all new user registration** — a real severity-critical false positive |
+| Field-level WAF exclusions | ✅ Tested | Confirmed it fixes one endpoint while **silently disabling protection on another** sharing the same field name |
+| Rate limiting (throttle/ban) | ✅ Tested | Real threshold tests, confirmed via log `rateLimitAction.outcome` |
+| JA3/JA4 TLS fingerprinting | ✅ Tested | Real browser-vs-curl split test — independent rate-limit buckets confirmed |
+| IP/ASN allow-deny | ✅ Tested | Denied own real IP, confirmed via log |
+| Geo-blocking | ✅ Tested | Real request from an actual `us-central1`-origin VM, correctly denied |
+| IPv6 | ⚠️ Partial | Provisioned and reachable in principle; this network lacks outbound IPv6 for full end-to-end proof |
+| `user_ip_request_headers` | ✅ Tested, corrected | Does **not** affect `origin.ip`/`origin.asn`/plain IP rules; **does** affect rate-limit `XFF_IP` keying — narrower scope than initially assumed |
+| Redirect: external 302 | ✅ Tested | Confirmed working via real `Location` header |
+| Redirect: reCAPTCHA Enterprise | ✅ Tested, corrected | Confirmed **inert** without an actual Enterprise key — stronger finding than "won't render a challenge" |
+| Preview mode | ✅ Tested | Confirmed via a distinct `previewSecurityPolicy` log field |
+| Backend security policies | ✅ Tested | The default, most-exercised policy type in this repo |
+| Regional security policies | ✅ Tested | Full regional LB stack built and torn down; `google-beta` provider + `capacity_scaler` requirements confirmed |
+| Edge security policies & precedence | ✅ Tested | Edge deny confirmed to win before backend policy is even evaluated |
+| Logging verbosity (NORMAL vs VERBOSE) | ✅ Tested, corrected | **No observable difference found** — corrected the original documentation assumption |
+| Address groups | ⛔ Documented only | Requires Cloud Armor Enterprise, confirmed via a real API error, not just docs |
+| Threat Intelligence | ⛔ Documented only | Requires Cloud Armor Enterprise |
+| Adaptive Protection | ⛔ Documented only | Requires Cloud Armor Enterprise |
+| Hierarchical (org/folder) policies | ⛔ Documented only | Module exists; applying it needs org-admin access not exercised here |
+
+---
+
+## 🔍 Real Findings — Not Just a Feature Tour
+
+Every row here is a genuine bug found, or a genuine assumption corrected, by testing against real infrastructure — the same spirit as this project's confirmed-real-issues table, applied to Cloud Armor rather than an org landing zone.
+
+| Real Issue Hit | Root Cause | Fix |
+|---|---|---|
+| Every Cloud Armor rule was silently bypassed | An allow-all rule at priority 10 beat every WAF/rate-limit/path rule, since it was evaluated first | Removed it; added a real baseline-allow at priority 9000, below all real rules |
+| Zero logs despite real denied traffic | `log_level` on the policy doesn't generate logs by itself — the backend service's own `log_config.enable` was never set | Added `log_config { enable = true }` to the backend service |
+| Backend went "unconditional drop overload" after a VM rebuild | Unmanaged instance groups silently lose membership when their VM is replaced; Terraform doesn't detect the drift | Manually re-added the VM to its instance group; documented as a known gotcha |
+| WAF sensitivity 2 blocked all new signups | Sensitivity 2's broader SQLi coverage came with a severe false positive on ordinary registration input | Locked in sensitivity 1 as the shipped default, backed by the real test evidence |
+| A field exclusion "fixed" one endpoint | Excluding the `username` field from WAF inspection also disabled SQLi protection on a *different* endpoint sharing that field name | Documented as a real risk; not shipped as the default approach |
+| `user_ip_request_headers` seemed to do nothing | Assumed it would make IP-match/CEL rules trust a spoofed header — it doesn't | Isolated testing found the real scope: rate-limit `XFF_IP` keying only |
+| A "would-be" rate-limit test kept failing unexpectedly | JA4's rule and the IP-based ban rule both matched `/transfer`, and the lower-priority-number rule always won, masking the other | Gave JA4 its own dedicated path, isolated from the collision |
+| An external-302 redirect stopped firing with no code change nearby | Retargeting JA4 to root path `/` created a *new*, unrelated collision with the redirect rule also matching `/` | Caught automatically by the regression suite on its first scheduled run; gave the redirect its own dedicated path too |
+| GitHub Actions failed with "token not found" | Per-step `env:` blocks don't persist to later steps in GitHub Actions | Moved `env:` to job level |
+| `terraform plan` hung forever in CI | Local execution mode doesn't auto-inject HCP Terraform workspace variables; no `terraform.tfvars` exists in a fresh CI checkout | Passed `TF_VAR_*` explicitly from repository variables, added `-input=false` as a fail-fast safety net |
+| CI failed with "could not find default credentials" | Nothing in the workflow ever authenticated to GCP itself — a separate concern from the HCP Terraform token | Built Workload Identity Federation (this org blocks service account key creation entirely) |
+| CI failed with a 403 on IAM resources | Resource-specific admin roles (`compute.admin`, etc.) don't include permission to manage *other* service accounts' IAM bindings | Granted `roles/resourcemanager.projectIamAdmin` explicitly |
+| A Monitoring alert policy repeatedly failed to create | Assumed `resource.type="global"`, then `"http_load_balancer"` — both wrong | Queried the Monitoring API directly for a real time series; found the correct type, `l7_lb_rule` |
+| BigQuery dataset creation rejected a plain integer | `default_table_expiration_ms` appears to enforce an int32-range ceiling in this provider version, even though the real API supports int64 | Used a value safely under the ~24.8-day ceiling (2^31 ms) |
+
+---
+
+## 🔁 The Recurring Bug Class
+
+The single most-repeated finding in this project: **two rate-limit/action rules matching overlapping or unconditional traffic on one path always have exactly one that actually matters** — whichever sits at the lower priority number — and fixing one collision can silently create a new one elsewhere.
+
+| # | Collision |
+|---|---|
+| 1 | Priority-10 allow-all vs. every real rule in the policy |
+| 2 | reCAPTCHA challenge rule vs. the `/login` rate-limit rule |
+| 3 | JA4 fingerprint rule vs. the IP-based ban rule, both on `/transfer` |
+| 4 | JA4 (after being moved to root `/`) vs. the external-302 redirect rule — caught automatically by the regression suite, not by manual review |
+
+The durable fix applied throughout: give every rate-limit/redirect/challenge rule its own dedicated, non-overlapping path rather than relying on priority ordering alone.
+
+---
+
+## ⚙️ CI/CD Pipeline
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `terraform-plan.yml` | Every PR touching `terraform/**` | Plans the lab environment, posts the plan as a PR comment |
+| `terraform-apply.yml` | Manual dispatch, typed confirmation required | Applies to the lab environment |
+| `terraform-destroy.yml` | Manual dispatch, exact project-ID confirmation required | Tears down the lab environment |
+| `security-regression.yml` | Daily cron + manual dispatch | Runs `scripts/security-regression-tests.sh` against live endpoints — already caught a real regression on its first run |
+
+- **Workload Identity Federation** — every workflow authenticates to GCP via short-lived OIDC tokens scoped to this exact repository. No service account key file has ever existed (this org's policy blocks key creation outright).
+- Getting CI/CD working end to end surfaced **six distinct real bugs** (see the findings table above) — the full, honest debugging account is in [`docs/cicd-setup.md`](docs/cicd-setup.md).
+
+---
+
+## 📡 Monitoring, Logging & Incident Response
+
+| Component | What It Does |
+|---|---|
+| **Deny-rate-spike alert** | Fires when Cloud Armor denies exceed a threshold within a window, summed across both backend services |
+| **Policy-change alert** | Fires on any Cloud Armor security policy mutation (rule added/removed/changed), sourced from the Admin Activity audit log |
+| **Email notification channel** | Both alerts route here — configurable via `notification_email` |
+| **BigQuery log export** | All LB/Cloud Armor logs exported for analysis beyond ad-hoc `gcloud logging read` queries |
+| **Example dashboard queries** | [`docs/dashboard-queries/`](docs/dashboard-queries/) — top blocked IPs, SQLi attempts over time, denies by rule priority; a starting point for a Looker Studio dashboard |
+| **Incident response runbook** | [`docs/incident-response-runbook.md`](docs/incident-response-runbook.md) — how to tell a real attack from a false positive, live mitigation options, rollback steps, all grounded in this project's own confirmed findings above |
+
+---
+
+## 🧰 Complete Tech & Tool Inventory
+
+### Core IaC
+| Tool | Purpose |
+|---|---|
+| Terraform | Primary IaC engine |
+| HCL | Terraform's configuration language |
+| HCP Terraform | Remote state storage (Local execution mode — see `docs/cicd-setup.md` for why) |
+
+### Google Cloud Services
+| Service | Used For |
+|---|---|
+| Cloud Armor (Standard tier) | WAF, rate limiting, IP/geo/ASN rules, redirects, backend/regional/edge policies |
+| Compute Engine | nginx + vuln-bank VMs, unmanaged instance groups |
+| Cloud Load Balancing | Global HTTPS LB (self-signed or Google-managed cert), regional external LB (temporary demo) |
+| Certificate Manager (Google-managed SSL) | Trusted HTTPS on real subdomains |
+| Cloud NAT | Outbound internet for VMs with no external IP |
+| IAM (incl. Workload Identity Federation) | All CI/CD authentication, VM service accounts |
+| Cloud Logging | All Cloud Armor / LB request logs, audit logs |
+| Cloud Monitoring | Alert policies, notification channels, log-based metrics |
+| BigQuery | Log export destination, example analysis queries |
+| Artifact Registry | Pinned vuln-bank container image |
+| reCAPTCHA Enterprise API | Enabled for the redirect-rule demo (confirmed inert without a real key) |
+
+### CI/CD & Automation
+| Tool / Action | Purpose |
+|---|---|
+| GitHub Actions | All CI/CD orchestration |
+| `google-github-actions/auth` | WIF-based GCP authentication in CI |
+| `hashicorp/setup-terraform` | Installs Terraform in CI runners |
+| `actions/checkout` | Repo checkout in every job |
+| `actions/github-script` | Posts Terraform plan output as a PR comment |
+| GitHub CLI (`gh`) | Far more reliable than the web UI for reading Actions logs during debugging |
+
+### Languages & Scripting
+| Language | Where Used |
+|---|---|
+| Bash | All demo scripts, the automated regression suite, CI shell steps |
+| PowerShell | Local development workflow (Windows) |
+| SQL | BigQuery dashboard example queries |
+| Python (Flask) | The vuln-bank target application |
+| YAML | GitHub Actions workflow definitions |
+| Markdown | All documentation |
+
+---
+
+## 🧪 Testing
+
+- **`scripts/security-regression-tests.sh`** — asserts real HTTP responses against live endpoints for baseline traffic, path-based rules, SQLi, XSS, rate-limiting, and redirects
+- **Runs daily via `security-regression.yml`**, plus on manual dispatch
+- **Already proved its value**: on its first real run, it caught the JA4-vs-redirect collision (finding #4 in the recurring-bug-class table above) — a regression that had gone unnoticed until the automated check existed
+- Manual demo scripts (`scripts/demos/`) cover capabilities that don't suit automated CI well — geo-blocking needs a real non-local origin, reCAPTCHA needs a real browser, JA3/JA4 needs a genuinely different TLS client
+
+---
+
+## 🗂️ Multi-Environment Structure
+
+```
+terraform/environments/
+├── lab/        # ACTIVELY DEPLOYED — this project's live test sandbox
+└── staging/    # NOT YET APPLIED — a clean reference environment: same
+                # modules, only the confirmed-safe shipped config, with
+                # monitoring/log-export wired in from the start
+```
+
+`staging` and a documented `prod` pattern exist as ready-to-use templates, deliberately not deployed — standing up two more full copies of this infrastructure would roughly double or triple real cost for a single-operator lab with no actual second set of users. See [`terraform/environments/README.md`](terraform/environments/README.md) for the full promotion workflow.
+
+---
+
+## ⚠️ Known Limitations
+
+- **No Cloud Armor Enterprise subscription** — Adaptive Protection, Threat Intelligence, Advanced Network DDoS, DDoS Attack Visibility, SCC integration, and Address Group enforcement are documented in [`docs/enterprise-features/`](docs/enterprise-features/) from public documentation only, clearly marked as not independently verified here
+- **Hierarchical (org/folder) policies** — the module exists and is documented, but applying it against a real org hierarchy needs org-admin access not exercised end to end in this project
+- **IPv6 not fully end-to-end verified** — provisioned and reachable in principle; this development network lacks outbound IPv6
+- **`staging`/`prod` environments not deployed** — deliberate cost decision for a single-operator lab; the structure and promotion workflow are the real deliverable
+- **Looker Studio dashboard not built** — BigQuery export and example queries exist; wiring an actual dashboard is a manual UI step left for whoever needs it
+
+---
+
+## 🚀 Prerequisites & Getting Started
 
 - A GCP project with billing enabled
 - Terraform >= 1.3
-- An HCP Terraform workspace configured for remote state, set to **Local**
-  execution mode (Remote mode can't resolve this repo's relative module
-  paths — confirmed the hard way; see `terraform/environments/lab/backend.tf`)
-- `gcloud` CLI authenticated, for running demo scripts and initial setup
-- A domain you control, if you want trusted HTTPS (self-signed works
-  without one, with a browser warning)
-- For the CI/CD pipeline: a GitHub repo with Workload Identity Federation
-  configured against your GCP project (see `docs/cicd-setup.md` for the
-  exact `gcloud` commands) — a service account key file will not work if
-  your org blocks key creation, which is a common and good default policy
-
-## Getting started
+- An HCP Terraform workspace, set to **Local** execution mode (Remote mode can't resolve this repo's relative module paths — confirmed the hard way)
+- `gcloud` CLI authenticated
+- A domain you control, if you want trusted HTTPS (self-signed works without one)
+- For CI/CD: Workload Identity Federation configured against your GCP project — see [`docs/cicd-setup.md`](docs/cicd-setup.md) for the exact commands
 
 ```bash
 git clone --recurse-submodules https://github.com/bikram-singh/gcp-cloud-armor-waf-ddos-lab.git
@@ -273,35 +314,49 @@ cd gcp-cloud-armor-waf-ddos-lab
 
 # Copy and fill in terraform/environments/lab/terraform.tfvars (gitignored)
 # with your project_id, vulnbank_image_tag, and notification_email.
+
+cd terraform/environments/lab
+terraform init
+terraform plan
 ```
 
-Then run Terraform locally against the `lab` environment, or trigger
-`terraform-apply.yml` from the Actions tab once CI/CD is configured.
+Or trigger `terraform-apply.yml` from the Actions tab once CI/CD is configured.
 
-**Remember to tear down when you're done** —
-`terraform destroy` locally or `terraform-destroy.yml` — see
-[`docs/pricing-cost-awareness.md`](./docs/pricing-cost-awareness.md) for
-what's actually billing while this runs, and remember the vulnerable app
-will attract real internet scanning traffic the moment it's reachable.
+---
 
-## Vulnerable app
+## 🧹 Teardown
 
-The SQLi/XSS/rate-limit demos target
-[`Commando-X/vuln-bank`](https://github.com/Commando-X/vuln-bank) (MIT
-licensed), included as a pinned git submodule — see
-[`vulnerable-app/NOTES.md`](./vulnerable-app/NOTES.md) for the pinned
-commit. Its AI chat agent is intentionally left disabled — out of scope
-for a Cloud Armor lab.
+```bash
+cd terraform/environments/lab
+terraform destroy
+```
 
-## Companion article
+Or trigger `terraform-destroy.yml` from the Actions tab (requires typing the exact project ID to confirm).
 
-This repo is the code companion to a Medium article walking through the
-real findings above in narrative form — what was assumed going in, what
-testing actually showed, and the bugs and corrections along the way.
-Link TBD.
+**Remember**: the vulnerable app attracts real internet scanning traffic the moment it's reachable on a public domain — confirmed within the same session it went live. Don't leave it running longer than you're actively testing. See [`docs/pricing-cost-awareness.md`](docs/pricing-cost-awareness.md) for what's actually billing while this runs.
 
-## License
+---
 
-This project's own Terraform, scripts, and documentation are MIT licensed.
-The `vulnerable-app/` submodule carries its own MIT license from
-upstream — see that repo directly for its terms.
+## 🎯 Vulnerable App
+
+The SQLi/XSS/rate-limit demos target [`Commando-X/vuln-bank`](https://github.com/Commando-X/vuln-bank) (MIT licensed), included as a pinned git submodule — see [`vulnerable-app/NOTES.md`](vulnerable-app/NOTES.md) for the pinned commit. Its AI chat agent is intentionally left disabled — out of scope for a Cloud Armor lab.
+
+> ⚠️ **Security notice:** this repo deploys an intentionally vulnerable application behind a public GCP Load Balancer for demonstration purposes. See [`SECURITY-NOTICE.md`](SECURITY-NOTICE.md) before deploying anything in this repo to a real project.
+
+---
+
+## 🔗 Repository
+
+| Repository | Purpose |
+|---|---|
+| [`gcp-cloud-armor-waf-ddos-lab`](https://github.com/bikram-singh/gcp-cloud-armor-waf-ddos-lab) | Cloud Armor WAF & DDoS Protection Lab — Terraform · Live Testing · Real Findings |
+
+---
+
+<div align="center">
+
+**Maintained by Bikram Singh**
+
+*Built with Terraform · Google Cloud Armor · GitHub Actions · Workload Identity Federation*
+
+</div>
