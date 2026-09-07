@@ -21,6 +21,7 @@
 - [Overview](#-overview)
 - [Why Cloud Armor](#-why-cloud-armor--the-actual-case-for-it)
 - [Architecture](#-architecture)
+- [Repo Structure](#-repo-structure)
 - [Capabilities — Tested vs. Documented-Only](#-capabilities--tested-vs-documented-only)
 - [Real Findings — Not Just a Feature Tour](#-real-findings--not-just-a-feature-tour)
 - [The Recurring Bug Class](#-the-recurring-bug-class)
@@ -127,6 +128,112 @@ Having tested this hands-on rather than just read the docs:
 
 ---
 
+## 🗂️ Repo Structure
+
+```
+gcp-cloud-armor-waf-ddos-lab/
+├── .gitmodules                       # vulnerable-app pinned to Commando-X/vuln-bank @ <commit-hash>
+├── terraform/
+│   ├── modules/
+│   │   ├── compute/                  # nginx VM template + vuln-bank VM (Flask app on :5000)
+│   │   ├── instance-groups/          # unmanaged IGs, multi-region
+│   │   ├── load-balancer/
+│   │   │   ├── https-lb/             # HTTPS LB, backend services, URL map
+│   │   │   └── network-lb/           # passthrough Network LB — Advanced Network DDoS + Network Edge policy demos
+│   │   ├── cloud-armor/              # security policies: backend + edge + regional
+│   │   │   ├── backend-policies/
+│   │   │   ├── edge-policies/
+│   │   │   ├── network-edge-policies/    # L3/L4 protection for passthrough Network LBs
+│   │   │   └── hierarchical-policies/    # org/folder-level policy enforcement
+│   │   ├── address-groups/           # org-scoped reusable IP/CIDR lists
+│   │   ├── monitoring/               # Cloud Monitoring alert policies + notification channel
+│   │   └── log-export/               # BigQuery sink for LB/Cloud Armor logs
+│   ├── environments/
+│   │   ├── README.md                 # multi-environment promotion workflow
+│   │   ├── lab/
+│   │   │   ├── main.tf
+│   │   │   ├── variables.tf
+│   │   │   ├── monitoring.tf         # wires monitoring + log-export modules into the live lab env
+│   │   │   └── backend.tf            # HCP Terraform remote state
+│   │   └── staging/                  # NOT YET APPLIED — clean reference environment template,
+│   │                                 # confirmed-safe config only, monitoring/log-export wired in
+│   └── policies/
+│       ├── rules-baseline.tf         # default deny-all, allow-all, priorities
+│       ├── rules-ip-based.tf         # allow/deny by IP, ASN
+│       ├── rules-ip-based-ipv6.tf    # same allow/deny pattern, IPv6 CIDR variant
+│       ├── rules-user-ip-header.tf   # evaluate original client IP behind another proxy/CDN
+│       ├── rules-address-groups.tf   # reusable IP/CIDR lists referenced across policies
+│       ├── rules-geo-based.tf        # region blocking
+│       ├── rules-path-based.tf       # CEL path expressions (/goodpath, /badpath)
+│       ├── rules-rate-limit.tf       # throttle + rate-based ban on vuln-bank /login, /transfer (app has no native rate limiting)
+│       ├── rules-rate-limit-ja4.tf   # rate limit by JA4 TLS fingerprint
+│       ├── rules-rate-limit-ja3.tf   # rate limit by JA3 TLS fingerprint
+│       ├── rules-redirect.tf         # reCAPTCHA Enterprise + external 302
+│       ├── rules-preconfigured-waf.tf    # OWASP sqli-stable, xss-stable; one-line CVE canary note
+│       ├── rules-waf-tuning.tf       # sensitivity levels (paranoia 0–4), signature opt-out, field/header/cookie exclusions
+│       ├── rules-threat-intelligence.tf  # evaluateThreatIntelligence() — Enterprise
+│       ├── rules-logging-modes.tf    # NORMAL vs VERBOSE logging on one existing rule
+│       ├── rules-preview-test.tf     # preview mode — logs a would-be match without enforcing
+│       ├── rules-xff-ip-test.tf      # XFF_IP rate-limit keying investigation, kept as empty list
+│       └── hierarchical-org-policy.tf    # applied at folder, tested for inheritance
+├── .github/workflows/
+│   ├── terraform-plan.yml            # PR: plan + post as comment
+│   ├── terraform-apply.yml           # manual dispatch: apply to lab env
+│   ├── terraform-destroy.yml         # manual dispatch: teardown (cost control)
+│   └── security-regression.yml       # daily automated regression run against live endpoints
+├── scripts/
+│   ├── security-regression-tests.sh  # the suite security-regression.yml runs
+│   ├── build-push-vulnbank-image.ps1 # normalizes line endings in a temp copy, never touches
+│   │                                 # the pinned submodule
+│   └── demos/
+│       ├── 01-baseline-deny-allow.sh
+│       ├── 02-ip-allow-deny.sh
+│       ├── 02b-ipv6-allow-deny.sh
+│       ├── 03-address-groups.sh
+│       ├── 04-path-based-rules.sh
+│       ├── 05-throttle-vs-ban.sh         # target vuln-bank /login and /transfer
+│       ├── 06-ja4-rate-limit.sh
+│       ├── 06b-ja3-rate-limit.sh
+│       ├── 07-geo-asn-blocking.sh
+│       ├── 08-hierarchical-policy.sh
+│       ├── 09-vulnbank-sqli-xss.sh       # SQLi on /login (& biller queries), XSS on feedback/profile field, blocked by preconfigured WAF
+│       ├── 10-user-ip-header.sh
+│       ├── 11-logging-modes.sh
+│       ├── 12-waf-tuning-false-positive.sh   # false positive: apostrophe in a legit transaction/biller name trips sqli-stable; fix via sensitivity + field exclusion
+│       ├── 13-redirect.sh
+│       └── xff-ip-test.sh
+├── vulnerable-app/                   # git submodule → Commando-X/vuln-bank (MIT), pinned to fixed commit
+│   └── NOTES.md                      # commit hash pinned; AI chat agent left disabled (DEEPSEEK_API_KEY unset, mock-mode not routed); out of scope for this lab
+├── docs/
+│   ├── architecture.md
+│   ├── standard-vs-enterprise.md
+│   ├── cicd-setup.md                 # the full CI/CD debugging journey — 6 real bugs, all fixed
+│   ├── incident-response-runbook.md  # attack vs. false-positive triage, grounded in real findings
+│   ├── dashboard-queries/            # example BigQuery SQL for a Looker Studio dashboard
+│   │   ├── README.md
+│   │   ├── top-blocked-ips.sql
+│   │   ├── sqli-attempts-over-time.sql
+│   │   └── denies-by-rule-priority.sql
+│   ├── enterprise-features/
+│   │   ├── adaptive-protection.md
+│   │   ├── threat-intelligence.md
+│   │   ├── advanced-network-ddos.md
+│   │   ├── bot-management-tokens.md
+│   │   ├── ddos-attack-visibility.md
+│   │   └── scc-integration.md        # SCC findings: Allowed traffic spike, Increasing deny ratio
+│   ├── alternate-backends/
+│   │   ├── serverless-neg.md
+│   │   └── gke-ingress-backendconfig.md
+│   ├── service-mesh-rate-limiting.md
+│   ├── iam-least-privilege.md         # least-privilege roles for the GitHub Actions service account
+│   ├── pricing-cost-awareness.md      # per-policy/per-rule/per-forwarding-rule billing + Enterprise subscription
+│   └── screenshots/
+├── README.md                          # includes upstream vuln-bank disclaimer: isolated env only, no real data, don't expose beyond this lab
+└── SECURITY-NOTICE.md                 # repeats vuln-bank's own warning, since it's now sitting behind a public GCP LB for demo purposes
+```
+
+---
+
 ## 🎯 Capabilities — Tested vs. Documented-Only
 
 | Capability | Status | Real Evidence |
@@ -157,7 +264,7 @@ Having tested this hands-on rather than just read the docs:
 
 ## 🔍 Real Findings — Not Just a Feature Tour
 
-Every row here is a genuine bug found, or a genuine assumption corrected, by testing against real infrastructure — the same spirit as this project's confirmed-real-issues table, applied to Cloud Armor rather than an org landing zone.
+Every row here is a genuine bug found, or a genuine assumption corrected, by testing against real infrastructure.
 
 | Real Issue Hit | Root Cause | Fix |
 |---|---|---|
