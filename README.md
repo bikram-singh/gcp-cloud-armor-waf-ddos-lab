@@ -88,6 +88,8 @@ Having tested this hands-on rather than just read the docs:
 
 ## 🏛️ Architecture
 
+![Cloud Armor Lab full architecture](docs/cloud_armor_lab_full_architecture.png)
+
 ```
                     Internet
                        │
